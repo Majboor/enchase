@@ -1,0 +1,16 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it."
+title: "chasepy: an open pipeline for the calibration and analysis of CHASE/HIS observations"
+type: software
+authors:
+  - family-names: "Ajmal"
+    given-names: "Waleed"
+    orcid: "https://orcid.org/0009-0006-8222-1983"
+repository-code: "https://github.com/Majboor/chase-pipeline"
+url: "https://pypi.org/project/chasepy/"
+license: MIT
+keywords:
+  - solar physics
+  - CHASE
+  - spectroscopy
+  - calibration

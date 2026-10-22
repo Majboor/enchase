@@ -180,6 +180,8 @@ Built with the guidance and corrections of **Dr. Alexander Pietrow** (AIP) and *
 
 ## Citing
 
+Author: Waleed Ajmal, ORCID [0009-0006-8222-1983](https://orcid.org/0009-0006-8222-1983). Software citation metadata is in [`CITATION.cff`](CITATION.cff).
+
 If you use this pipeline, cite the methods it builds on:
 
 - Molnar et al. 2019, *ApJ* **881**, 99. Hα width to temperature ([10.3847/1538-4357/ab2ba3](https://doi.org/10.3847/1538-4357/ab2ba3))
