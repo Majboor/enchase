@@ -3,6 +3,51 @@
 All notable changes to this project are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/).
 
+## [Unreleased]
+
+Alignment options for Hα-only data and long series (Solar Physics referee
+revision). All defaults are unchanged, so existing results do not change.
+
+### Added
+- **Header recentring:** `load_flare_sequence(..., align_mode="header")`
+  (config `align_mode`, CLI `--align-mode header`) takes each scan's crop shift
+  from the disc-centre drift in the headers (`CRPIX1`/`CRPIX2`) plus the
+  differential rotation of the patch centre (Snodgrass & Ulrich 1990, with
+  `B0`), without image correlation. `align_mode="header+xcorr"` adds a
+  correlation residual on top (rejected above `max_residual`, 3 px).
+  `disc_center="limb"|"auto"` uses sub-pixel limb fits instead of `CRPIX`
+  (`auto` checks the header against limb fits of three scans first).
+  `subpixel=True` (`--subpixel`) applies the fractional part of the shift with
+  a cubic spline instead of rounding.
+- **Chained references for long series:** `reference="previous"|"running"`
+  (`--reference`, `reference_window`) correlates each scan with the previous
+  scan or with the mean of the last few aligned scans, instead of scan 0.
+  `drift_control="header"` (`--drift-control header`) ties the chained steps
+  back to the header pointing by least squares, so chained errors do not
+  random-walk. `shift_method="windowed"` uses the Hann-windowed unnormalised
+  correlation of `chase.analysis.validation` instead of phase correlation.
+- **Flow reference options:** `flow_reference="stable"|"masked"|"stable+masked"`
+  (`--flow-reference`) in the pipeline. `stable` computes the optical flow on
+  the far-wing channel(s) whose image changes least relative to its own
+  contrast (`chase.calib.select_flow_reference`); `masked` ignores pixels
+  that change by more than `flare_threshold` (default 0.1) of the median
+  intensity (`chase.calib.flare_mask`, `optical_flow_align(mask=...)`).
+- New module `chase.calib.pointing`: `header_disc_center`,
+  `limb_disc_centers`, `solar_b0`, `rotation_shift`, `header_shifts`,
+  `windowed_shift`, `track_shifts`, `tie_to_header`; and
+  `chase.io.alignment_shifts` (the loader's pass 1 on windows in memory).
+
+### Checked
+- **No `CRPIX1`/`CRPIX2` axis swap.** `CRPIX1` is the column (x) and
+  `CRPIX2` the row (y). Against per-scan sub-pixel limb fits the header
+  centre agrees to 0.5-0.7 px and its drift to 0.10-0.23 px rms in the
+  2023-12-29, 2024-10-03, 2024-12-14 and 2026-07-04 sets; swapped, they
+  differ by 20-66 px. The 2023-03-29 Level-1 headers are 37 px off the limb
+  and do not follow it under either reading (6.8-7.7 px rms). A test covers
+  the axis mapping. `disc_center="auto"` detects such files and warns: on the
+  2023-03-29 X1.2 data the header modes are not usable even with limb fits,
+  because odd and even scans have field-dependent offsets of 8-11 px.
+
 ## [2.1.1] — 2026-10-22
 
 Second round of changes for the Solar Physics referee report: code used for

@@ -22,6 +22,17 @@ resample_wavelength = true     # per-frame resample onto frame 0's grid
 optical_flow        = true     # fine optical-flow stabilisation
 flow_method         = "farneback"   # "tvl1" or "farneback" — TV-L1 blocks at flare peak; Farneback stays clean (docs/FLARE_STABILIZATION.md)
 ref_channel         = "fe_last"  # "fe_last" (flare-free) or "ha_cont"
+# Alignment options (defaults shown). For Hα-only quiet Sun / filaments / limb:
+# align_mode = "header" (and optical_flow = false); see docs/SDK.md.
+# align_mode       = "xcorr"    # "xcorr" | "header" | "header+xcorr"
+# reference        = "first"    # "first" | "previous" | "running"
+# reference_window = 3
+# drift_control    = "none"     # "none" | "header"
+# disc_center      = "crpix"    # "crpix" | "limb" | "auto"
+# rotation         = true
+# subpixel         = false
+# shift_method     = "phase"    # "phase" | "windowed"
+# flow_reference   = "default"  # "default" | "stable" | "masked" | "stable+masked"
 
 # --- Analysis -----------------------------------------------------------------
 contrast      = true

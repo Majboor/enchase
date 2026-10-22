@@ -75,6 +75,14 @@ def run_pipeline(config: Config, progress: Optional[ProgressFn] = None) -> dict:
             derotate=config.derotate,
             resample=config.resample_wavelength,
             verbose=True,
+            align_mode=config.align_mode,
+            reference=config.reference,
+            reference_window=config.reference_window,
+            drift_control=config.drift_control,
+            disc_center=config.disc_center,
+            rotation=config.rotation,
+            subpixel=config.subpixel,
+            shift_method=config.shift_method,
         )
     results["sequence"] = seq
     has_fe = seq["fe_cubes"] is not None
@@ -85,13 +93,13 @@ def run_pipeline(config: Config, progress: Optional[ProgressFn] = None) -> dict:
         # --- 2. Optical-flow stabilisation -----------------------------------
         if config.optical_flow:
             p("align", f"optical-flow stabilisation ({config.flow_method}) on flare-free channel…")
-            ref = seq["align_ref"]
+            ref, mask = _flow_reference(config, seq, p)
             if has_fe:
                 ha_al, fe_al = optical_flow_align(
-                    ha, reference=ref, method=config.flow_method, extra_cubes=fe
+                    ha, reference=ref, method=config.flow_method, extra_cubes=fe, mask=mask
                 )
             else:
-                ha_al = optical_flow_align(ha, reference=ref, method=config.flow_method)
+                ha_al = optical_flow_align(ha, reference=ref, method=config.flow_method, mask=mask)
                 fe_al = None
         else:
             ha_al, fe_al = ha, fe
@@ -173,6 +181,36 @@ def run_pipeline(config: Config, progress: Optional[ProgressFn] = None) -> dict:
 
     p("done", f"outputs written to {config.out_dir}")
     return results
+
+
+def _flow_reference(config, seq, p):
+    """Flow reference image and optional flare mask for ``config.flow_reference``."""
+    from .calib.align import flare_mask, select_flow_reference
+
+    mode = config.flow_reference
+    if mode not in ("default", "stable", "masked", "stable+masked"):
+        raise ValueError(f"flow_reference must be 'default', 'stable', 'masked' or "
+                         f"'stable+masked', got {mode!r}")
+    ref = seq["align_ref"]
+    if mode.startswith("stable"):
+        if seq["fe_cubes"] is not None:
+            sel = select_flow_reference(seq["fe_cubes"], seq["wavelength_fe"],
+                                        core_wavelength=6569.214, min_offset=0.3,
+                                        n_channels=config.flow_channels)
+        else:
+            sel = select_flow_reference(seq["ha_cubes"], seq["wavelength_ha"],
+                                        core_wavelength=config.core_wavelength,
+                                        n_channels=config.flow_channels)
+        ref = sel["reference"]
+        p("align", f"flow reference: channel(s) {sel['channels']} at "
+                   f"{[round(w, 2) for w in sel['wavelengths']]} Å (score "
+                   f"{min(sel['scores'].values()):.3f}; last channel "
+                   f"{sel['score_last_channel']})")
+    mask = None
+    if mode.endswith("masked"):
+        mask = flare_mask(ref, threshold=config.flare_threshold)
+        p("align", f"flare mask: up to {100 * mask.mean(axis=(1, 2)).max():.1f} % of pixels ignored")
+    return ref, mask
 
 
 def _run_temperature(config, seq, ha_al, fe_al, has_fe, p) -> dict:

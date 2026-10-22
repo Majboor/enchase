@@ -10,7 +10,10 @@ refactor of the proven ``v50`` loader and preserves every physics rule:
 * **per-frame wavelength resampling** onto frame 0's grid;
 * a **separate quiet-Sun background patch** for the contrast profile;
 * an optional **separate align-patch** (small box for shift estimation, large box
-  for the saved data).
+  for the saved data);
+* optional **header recentring** (``align_mode="header"``), chained
+  **scan-to-scan / running references** for long series, and **sub-pixel**
+  crops (see :mod:`chase.calib.pointing`).
 
 Power users who want only one of these steps can call the modular functions in
 :mod:`chase.calib` directly — this loader simply orchestrates them with the
@@ -24,11 +27,19 @@ from typing import Optional, Sequence
 import numpy as np
 
 from .. import _compat  # noqa: F401
+from ..calib.pointing import (
+    header_disc_center,
+    header_shifts,
+    limb_disc_centers,
+    track_shifts,
+    tie_to_header,
+    windowed_shift,
+)
 from ..calib.spatial import derotate_crop, phase_shift
 from ..calib.wavelength import resample_wavelength
 from .download import discover_fits
 
-__all__ = ["load_flare_sequence", "robust_shifts"]
+__all__ = ["load_flare_sequence", "robust_shifts", "alignment_shifts"]
 
 
 def robust_shifts(shifts, threshold=4.0, verbose=False, ref_idx=None):
@@ -97,6 +108,85 @@ def robust_shifts(shifts, threshold=4.0, verbose=False, ref_idx=None):
     return [tuple(row) for row in out]
 
 
+_ALIGN_MODES = ("xcorr", "header", "header+xcorr")
+_REFERENCES = ("first", "previous", "running")
+_DISC_CENTERS = ("crpix", "limb", "auto")
+
+
+def _obs_time(hdr, i):
+    return hdr.get("DATE-OBS", hdr.get("DATE_OBS", None))
+
+
+def _disc_centers(names, hdrs, source, derotate, verbose):
+    """Disc centre (cx, cy) of every scan and the disc radius, for header modes.
+
+    ``names`` are the files of the tracking channel (Fe I if present, else Hα);
+    their last channel is used for the limb fits.
+    """
+    import astropy.io.fits as fits
+
+    crp = [header_disc_center(h) for h in hdrs]
+    r_hdr = hdrs[0].get("R_SUN", None)
+    if source == "crpix" and r_hdr is not None:
+        return crp, float(r_hdr), "crpix"
+    if derotate and source != "crpix":
+        raise ValueError("disc_center='limb'/'auto' is not supported with derotate=True; "
+                         "use disc_center='crpix'")
+
+    cache = {}
+
+    def limb(i):
+        if i not in cache:
+            with fits.open(names[i], memmap=True) as h:
+                img = np.asarray(h[1].section[h[1].header["NAXIS3"] - 1], dtype=np.float32)
+            cache[i] = limb_disc_centers([img])[0]
+        return cache[i]
+
+    if source == "crpix":                      # R_SUN missing: radius from one limb fit
+        return crp, float(limb(0)[2]), "crpix"
+    n = len(hdrs)
+    if source == "auto":
+        idx = sorted({0, n // 2, n - 1})
+        off = np.array([[limb(i)[0] - crp[i][0], limb(i)[1] - crp[i][1]] for i in idx])
+        ok = bool(np.all(np.ptp(off, axis=0) <= 1.0) and np.all(np.abs(off.mean(0)) <= 3.0))
+        if verbose:
+            print(f"   disc_center='auto': limb - CRPIX offset on scans {idx} = "
+                  f"{np.round(off, 2).tolist()} px -> using {'CRPIX' if ok else 'limb fits'}")
+        if ok:
+            return crp, float(r_hdr) if r_hdr is not None else float(limb(0)[2]), "crpix"
+        import warnings
+
+        warnings.warn(
+            "disc_center='auto': the header CRPIX disagrees with the limb, so per-scan limb fits "
+            "are used. On such files (the 2023-03 Level-1 data) the header modes were not "
+            "reliable: odd and even scans had field-dependent offsets of 8-11 px that the disc "
+            "centre does not follow. Prefer align_mode='xcorr' with Fe I there.", stacklevel=3)
+    fitc = [limb(i) for i in range(n)]
+    return [(f[0], f[1]) for f in fitc], float(np.median([f[2] for f in fitc])), "limb"
+
+
+def _shift_crop(buf, cy, cx, H, W, subpixel):
+    """Crop ``buf[:, cy:cy+H, cx:cx+W]`` at a possibly fractional origin.
+
+    With ``subpixel`` the fractional part is applied with a cubic spline
+    (``scipy.ndimage.shift``); otherwise the origin is rounded.
+    """
+    if not subpixel:
+        iy, ix = int(round(cy)), int(round(cx))
+        return buf[:, iy:iy + H, ix:ix + W]
+    from scipy.ndimage import shift as ndshift
+
+    iy, ix = int(np.floor(cy)), int(np.floor(cx))
+    fy, fx = cy - iy, cx - ix
+    m = 3
+    bp = np.pad(buf, ((0, 0), (m, m + 1), (m, m + 1)), mode="edge")
+    sub = bp[:, iy:iy + H + 2 * m, ix:ix + W + 2 * m].astype(np.float32)
+    if abs(fy) < 1e-6 and abs(fx) < 1e-6:
+        return sub[:, m:m + H, m:m + W]
+    out = ndshift(sub, (0.0, -fy, -fx), order=3, mode="nearest")
+    return out[:, m:m + H, m:m + W]
+
+
 def load_flare_sequence(
     fits_dir: str,
     patch: Optional[Sequence[int]] = None,
@@ -108,6 +198,18 @@ def load_flare_sequence(
     smooth_shifts: bool = True,
     derotate: bool = False,
     verbose: bool = True,
+    *,
+    align_mode: str = "xcorr",
+    reference: str = "first",
+    reference_window: int = 3,
+    drift_control: str = "none",
+    disc_center: str = "crpix",
+    rotation: bool = True,
+    subpixel: bool = False,
+    shift_method: str = "phase",
+    max_residual: float = 3.0,
+    header_sigma: float = 1.0,
+    step_sigma: float = 0.25,
 ):
     """Load and crop-track a CHASE HA(+FE) sequence from a directory.
 
@@ -138,6 +240,63 @@ def load_flare_sequence(
         solar north; with this on, ``patch`` coordinates refer to the
         derotated (north-up) frame. See :func:`chase.calib.derotate`.
     verbose : bool, optional
+    align_mode : {"xcorr", "header", "header+xcorr"}, optional
+        How the per-scan crop shift is found (only with a ``patch`` and
+        ``track=True``).
+
+        * ``"xcorr"`` (default, the v2.1 behaviour): cross-correlation on the
+          tracking channel (Fe I last wavelength, else Hα last wavelength).
+        * ``"header"``: from the disc-centre drift of the headers plus the
+          differential rotation of the patch centre; no image correlation.
+          Recommended for Hα-only data of quiet Sun, filaments and the limb,
+          where the far-wing contrast is too low for correlation.
+        * ``"header+xcorr"``: each scan's window is first moved by the header
+          shift, then the remaining shift is measured by correlation. With
+          ``reference="first"`` a residual larger than ``max_residual`` px is
+          treated as a failed correlation and set to zero (header only); with
+          a chained reference the steps are tied back to the header (see
+          ``drift_control``).
+    reference : {"first", "previous", "running"}, optional
+        Correlation reference for the ``xcorr`` modes (see
+        :func:`chase.calib.pointing.track_shifts`). ``"first"`` (default)
+        correlates with scan 0, which fails on quiet Sun after about 15
+        minutes because the granulation evolves. ``"previous"`` chains
+        scan-to-scan steps; ``"running"`` correlates with the mean of the last
+        ``reference_window`` aligned scans.
+    reference_window : int, optional
+        Scans in the running mean (default 3).
+    drift_control : {"none", "header"}, optional
+        For chained references in ``align_mode="xcorr"``: ``"header"`` ties
+        the chained steps back to the header pointing by least squares
+        (:func:`chase.calib.pointing.tie_to_header`), so chained errors do not
+        random-walk. ``"header+xcorr"`` with a chained reference always does
+        this. Default ``"none"``.
+    disc_center : {"crpix", "limb", "auto"}, optional
+        Source of the disc centre for the header modes and ``drift_control``:
+        ``"crpix"`` (default) the header ``CRPIX1``/``CRPIX2``; ``"limb"`` a
+        sub-pixel limb fit of every scan (one full channel is read per scan);
+        ``"auto"`` checks the header against limb fits of the first, middle
+        and last scans and uses the limb fits only when they disagree (as for
+        the 2023-03 Level-1 files).
+    rotation : bool, optional
+        Include differential rotation of the patch centre in the header
+        shifts (default True; it is skipped automatically for a patch centre
+        off the disc).
+    subpixel : bool, optional
+        Apply the fractional part of the shifts with a cubic spline instead of
+        rounding them to whole pixels (default False). Only useful when the
+        shifts are better than 0.5 px, i.e. for the header modes.
+    shift_method : {"phase", "windowed"}, optional
+        Correlation estimator: ``"phase"`` (default, :func:`phase_shift`) or
+        ``"windowed"`` (Hann-windowed unnormalised correlation,
+        :func:`chase.calib.pointing.windowed_shift`), which is more robust on
+        low-contrast fields.
+    max_residual : float, optional
+        Largest accepted correlation residual in px for ``"header+xcorr"``
+        with ``reference="first"`` (default 3).
+    header_sigma, step_sigma : float, optional
+        Weights of :func:`chase.calib.pointing.tie_to_header` (defaults 1.0
+        and 0.25 px).
 
     Returns
     -------
@@ -145,8 +304,21 @@ def load_flare_sequence(
         Keys: ``ha_cubes`` (nframes, nch_ha, H, W), ``fe_cubes`` (or None),
         ``cont_raw``, ``core_raw``, ``align_ref``, ``ha_bg`` (or None),
         ``wavelength_ha``, ``wavelength_fe``, ``times``, ``nframes``, ``H``,
-        ``W``, ``nchannels_ha``, ``nchannels_fe``, ``core_idx``, ``patch``.
+        ``W``, ``nchannels_ha``, ``nchannels_fe``, ``core_idx``, ``patch``,
+        ``shifts``, ``inst_rot``, ``derotated``, ``crpix``, ``cdelt`` and
+        ``pointing`` (the alignment settings, the header shifts and the
+        correlation measurements, when used).
     """
+    if align_mode not in _ALIGN_MODES:
+        raise ValueError(f"align_mode must be one of {_ALIGN_MODES}, got {align_mode!r}")
+    if reference not in _REFERENCES:
+        raise ValueError(f"reference must be one of {_REFERENCES}, got {reference!r}")
+    if disc_center not in _DISC_CENTERS:
+        raise ValueError(f"disc_center must be one of {_DISC_CENTERS}, got {disc_center!r}")
+    if drift_control not in ("none", "header"):
+        raise ValueError(f"drift_control must be 'none' or 'header', got {drift_control!r}")
+    if shift_method not in ("phase", "windowed"):
+        raise ValueError(f"shift_method must be 'phase' or 'windowed', got {shift_method!r}")
     import astropy.io.fits as fits
 
     ha_names, fe_names = discover_fits(fits_dir)
@@ -220,7 +392,11 @@ def load_flare_sequence(
     # Pass 1: measure every frame's shift on the tracking channel, then clean
     # the series as a whole. Per-frame decisions can't tell a failed
     # correlation from real drift; the full series can.
-    if patch is not None and track:
+    pointing = {"align_mode": align_mode, "reference": reference,
+                "drift_control": drift_control, "subpixel": bool(subpixel)}
+    default_path = (align_mode == "xcorr" and reference == "first"
+                    and shift_method == "phase")
+    if patch is not None and track and default_path:
         shifts = []
         for i in range(nframes):
             track_name = fe_names[i] if has_fe else ha_names[i]
@@ -228,11 +404,25 @@ def load_flare_sequence(
                 cur = _chan_win(_h[1], -1, ay0, ay1, ax0, ax1)
             sy, sx = phase_shift(ref_crop, cur)
             shifts.append((float(sy), float(sx)))
+        pointing["measured"] = [list(x) for x in shifts]
         if smooth_shifts:
             shifts = robust_shifts(shifts, verbose=verbose, ref_idx=0)
-        shifts = [(int(round(sy)), int(round(sx))) for sy, sx in shifts]
+    elif patch is not None and track:
+        shifts = _pass1_modes(
+            ha_names, fe_names if has_fe else None, (ay0, ay1, ax0, ax1), _chan_win,
+            H_full, W_full, derotate, inst_rot0, align_mode, reference, reference_window,
+            drift_control, disc_center, rotation, shift_method, max_residual,
+            header_sigma, step_sigma, smooth_shifts, pointing, verbose)
     else:
-        shifts = [(0, 0)] * nframes
+        shifts = [(0.0, 0.0)] * nframes
+    if subpixel:
+        shifts = [(float(sy), float(sx)) for sy, sx in shifts]
+    else:
+        shifts = [(int(round(sy)), int(round(sx))) for sy, sx in shifts]
+    if patch is not None:
+        big = max(max(abs(a), abs(b)) for a, b in shifts)
+        if big > pad - (1 if subpixel else 0):
+            raise ValueError(f"tracking shift of {big:.1f} px exceeds pad={pad}; increase pad")
 
     # Quiet-Sun background patch, offset left by one patch width.
     bg_dx = -(x1 - x0)
@@ -263,10 +453,13 @@ def load_flare_sequence(
         # Shift-then-crop with the pass-1 (cleaned) shift for this frame.
         sy, sx = shifts[i]
         if verbose and (sy or sx):
-            print(f"  Frame {i:>2d}: shift y={sy:+d}, x={sx:+d}")
+            if subpixel:
+                print(f"  Frame {i:>2d}: shift y={sy:+.2f}, x={sx:+.2f}")
+            else:
+                print(f"  Frame {i:>2d}: shift y={sy:+d}, x={sx:+d}")
         cy, cx = oy - sy, ox - sx
 
-        ha_crop = _cube_win(cube_ha, hdr_ha, py0, py1, px0, px1)[:, cy:cy + H, cx:cx + W]
+        ha_crop = _shift_crop(_cube_win(cube_ha, hdr_ha, py0, py1, px0, px1), cy, cx, H, W, subpixel)
         if resample:
             ha_crop = resample_wavelength(ha_crop, wav_ha_i, wavelength_ha)
         ha_cubes[i] = ha_crop
@@ -274,11 +467,12 @@ def load_flare_sequence(
         core_raw[i] = ha_cubes[i, core_idx]
 
         if has_bg:
-            bg = _cube_win(cube_ha, hdr_ha, by0 - sy, by1 - sy, bx0 - sx, bx1 - sx)
+            isy, isx = int(round(sy)), int(round(sx))
+            bg = _cube_win(cube_ha, hdr_ha, by0 - isy, by1 - isy, bx0 - isx, bx1 - isx)
             ha_bg[i] = resample_wavelength(bg, wav_ha_i, wavelength_ha) if resample else bg
 
         if has_fe:
-            fe_crop = _cube_win(cube_fe, hdr_fe, py0, py1, px0, px1)[:, cy:cy + H, cx:cx + W]
+            fe_crop = _shift_crop(_cube_win(cube_fe, hdr_fe, py0, py1, px0, px1), cy, cx, H, W, subpixel)
             if resample:
                 fe_crop = resample_wavelength(fe_crop, wav_fe_i, wavelength_fe)
             fe_cubes[i] = fe_crop
@@ -316,4 +510,149 @@ def load_flare_sequence(
         "crpix": (float(hdr0.get("CRPIX1", W_full / 2)),
                   float(hdr0.get("CRPIX2", H_full / 2))),
         "cdelt": float(hdr0.get("CDELT1", 1.04)),
+        "pointing": pointing,
     }
+
+
+def _pass1_modes(ha_names, fe_names, awin, chan_win, H_full, W_full, derotate, inst_rot0,
+                 align_mode, reference, reference_window, drift_control, disc_center,
+                 rotation, shift_method, max_residual, header_sigma, step_sigma,
+                 smooth_shifts, pointing, verbose):
+    """Pass 1 of :func:`load_flare_sequence` for the non-default alignment modes:
+    gather the header pointing from the FITS files, then call
+    :func:`alignment_shifts`."""
+    import astropy.io.fits as fits
+
+    ay0, ay1, ax0, ax1 = awin
+    track_names = fe_names if fe_names is not None else ha_names
+    need_header = align_mode in ("header", "header+xcorr") or drift_control == "header"
+    h = None
+    if need_header:
+        hdrs = [fits.getheader(f, 1) for f in track_names]
+        times = [_obs_time(hd, i) for i, hd in enumerate(hdrs)]
+        if any(t is None for t in times):
+            raise ValueError("header alignment needs DATE-OBS/DATE_OBS in every file")
+        centers, radius, used = _disc_centers(track_names, hdrs, disc_center, derotate, verbose)
+        roi_c = ((ay0 + ay1 - 1) / 2.0, (ax0 + ax1 - 1) / 2.0)
+        h = header_shifts(centers, times, roi_c, radius, rotation=rotation,
+                          north_angle=0.0 if derotate else inst_rot0)
+        pointing.update({"disc_center": used, "disc_centers": [list(c) for c in centers],
+                         "radius_px": radius})
+        if verbose:
+            print(f"   Header pointing: disc centre from {used}, rotation={'on' if rotation else 'off'}; "
+                  f"last scan shift y={h[-1][0]:+.2f}, x={h[-1][1]:+.2f} px")
+
+    def read_window(i, ys, ye, xs, xe):
+        with fits.open(track_names[i], memmap=True) as _h:
+            return chan_win(_h[1], -1, ys, ye, xs, xe)
+
+    return alignment_shifts(
+        read_window, len(ha_names), awin, (H_full, W_full), align_mode=align_mode,
+        header=h, reference=reference, reference_window=reference_window,
+        drift_control=drift_control, shift_method=shift_method, max_residual=max_residual,
+        header_sigma=header_sigma, step_sigma=step_sigma, smooth_shifts=smooth_shifts,
+        pointing=pointing, verbose=verbose)
+
+
+def alignment_shifts(
+    read_window,
+    nframes: int,
+    align_patch: Sequence[int],
+    frame_shape: Sequence[int],
+    align_mode: str = "xcorr",
+    header=None,
+    reference: str = "first",
+    reference_window: int = 3,
+    drift_control: str = "none",
+    shift_method: str = "phase",
+    max_residual: float = 3.0,
+    header_sigma: float = 1.0,
+    step_sigma: float = 0.25,
+    smooth_shifts: bool = True,
+    pointing: Optional[dict] = None,
+    verbose: bool = False,
+):
+    """Per-scan crop shifts for every alignment mode of :func:`load_flare_sequence`.
+
+    This is the loader's pass 1 without the file handling, so the same logic
+    can run on windows that are already in memory.
+
+    Parameters
+    ----------
+    read_window : callable
+        ``read_window(i, y0, y1, x0, x1) -> ndarray (h, w)``: the tracking
+        channel of scan ``i`` in the given frame window.
+    nframes : int
+    align_patch : [y0, y1, x0, x1]
+        Nominal window for the correlation.
+    frame_shape : (H, W)
+        Full frame size, for bounds checks.
+    align_mode, reference, reference_window, drift_control, shift_method,
+    max_residual, header_sigma, step_sigma, smooth_shifts
+        As in :func:`load_flare_sequence`.
+    header : list of (sy, sx) or None
+        Header shifts (:func:`chase.calib.pointing.header_shifts`); required
+        for ``"header"``, ``"header+xcorr"`` and ``drift_control="header"``.
+    pointing : dict or None, optional
+        Filled with the header shifts, the correlation measurements and the
+        number of rejected residuals.
+    verbose : bool, optional
+
+    Returns
+    -------
+    list of (sy, sx) floats, scan 0 = (0, 0).
+    """
+    if pointing is None:
+        pointing = {}
+    n = nframes
+    ay0, ay1, ax0, ax1 = align_patch
+    H_full, W_full = frame_shape
+    h = header
+    need_header = align_mode in ("header", "header+xcorr") or drift_control == "header"
+    if need_header and h is None:
+        raise ValueError(f"align_mode={align_mode!r} / drift_control={drift_control!r} "
+                         "needs the header shifts")
+    if h is not None:
+        pointing["header_shifts"] = [list(map(float, x)) for x in h]
+    if align_mode == "header":
+        return [tuple(map(float, x)) for x in h]
+
+    # Correlation on windows read at the nominal position (xcorr) or at the
+    # header-predicted position (header+xcorr).
+    pre = [(0, 0)] * n if align_mode == "xcorr" else [(int(round(a)), int(round(b))) for a, b in h]
+    windows = []
+    for i in range(n):
+        py, px = pre[i]
+        ys, ye, xs, xe = ay0 - py, ay1 - py, ax0 - px, ax1 - px
+        if ys < 0 or xs < 0 or ye > H_full or xe > W_full:
+            raise ValueError(f"scan {i}: header-shifted align window leaves the frame")
+        windows.append(read_window(i, ys, ye, xs, xe))
+    fn = phase_shift if shift_method == "phase" else windowed_shift
+    meas, steps = track_shifts(windows, reference=reference,
+                               reference_window=reference_window, shift_fn=fn)
+    pointing["measured"] = [list(x) for x in meas]
+    pointing["steps"] = [list(x) for x in steps]
+
+    if align_mode == "xcorr":
+        if reference == "first":
+            return robust_shifts(meas, verbose=verbose, ref_idx=0) if smooth_shifts else meas
+        if drift_control == "header":
+            return tie_to_header(steps, h, sigma_step=step_sigma, sigma_header=header_sigma,
+                                 verbose=verbose)
+        return meas
+
+    # header+xcorr
+    if reference == "first":
+        res = np.asarray(meas, dtype=float)
+        bad = np.hypot(res[:, 0], res[:, 1]) > max_residual
+        if verbose:
+            for k in np.nonzero(bad)[0]:
+                print(f"  Frame {k:>2d}: correlation residual ({res[k, 0]:+.1f}, {res[k, 1]:+.1f}) px "
+                      f"> {max_residual} px; header shift only")
+        res[bad] = 0.0
+        pointing["n_residual_rejected"] = int(bad.sum())
+        return [(pre[i][0] + res[i, 0], pre[i][1] + res[i, 1]) for i in range(n)]
+    abs_steps = [(0.0, 0.0)] + [(steps[i][0] + pre[i][0] - pre[i - 1][0],
+                                 steps[i][1] + pre[i][1] - pre[i - 1][1]) for i in range(1, n)]
+    return tie_to_header(abs_steps, h, sigma_step=step_sigma, sigma_header=header_sigma,
+                         verbose=verbose)

@@ -12,7 +12,23 @@ from .spatial import (
     recenter,
     track_and_crop,
 )
-from .align import create_optical_flow_solver, optical_flow_align, warp_cube
+from .align import (
+    create_optical_flow_solver,
+    flare_mask,
+    optical_flow_align,
+    select_flow_reference,
+    warp_cube,
+)
+from .pointing import (
+    header_disc_center,
+    header_shifts,
+    limb_disc_centers,
+    rotation_shift,
+    solar_b0,
+    tie_to_header,
+    track_shifts,
+    windowed_shift,
+)
 from .wavelength import (
     align_spectrum,
     correct_spectral_drift,
@@ -46,6 +62,17 @@ __all__ = [
     "create_optical_flow_solver",
     "optical_flow_align",
     "warp_cube",
+    "select_flow_reference",
+    "flare_mask",
+    # pointing
+    "header_disc_center",
+    "header_shifts",
+    "limb_disc_centers",
+    "rotation_shift",
+    "solar_b0",
+    "tie_to_header",
+    "track_shifts",
+    "windowed_shift",
     # wavelength
     "align_spectrum",
     "correct_spectral_drift",

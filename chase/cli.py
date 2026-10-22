@@ -44,11 +44,35 @@ def build_parser() -> argparse.ArgumentParser:
                    help="Disable outlier rejection on tracking shifts")
     p.add_argument("--derotate", action="store_true",
                    help="Rotate frames to solar north using the header INST_ROT angle")
+    p.add_argument("--align-mode", choices=["xcorr", "header", "header+xcorr"], default=None,
+                   help="Crop shifts from cross-correlation (default), the header disc centre "
+                        "plus solar rotation, or the header plus a correlation residual")
+    p.add_argument("--reference", choices=["first", "previous", "running"], default=None,
+                   help="Correlation reference scan (default: first)")
+    p.add_argument("--reference-window", type=int, default=None,
+                   help="Scans in the running-mean reference (default 3)")
+    p.add_argument("--drift-control", choices=["none", "header"], default=None,
+                   help="Tie chained correlation steps back to the header pointing")
+    p.add_argument("--disc-center", choices=["crpix", "limb", "auto"], default=None,
+                   help="Disc-centre source for the header modes (default: crpix)")
+    p.add_argument("--no-rotation", action="store_true",
+                   help="Leave out differential rotation in the header modes")
+    p.add_argument("--subpixel", action="store_true",
+                   help="Apply fractional crop shifts with a cubic spline")
+    p.add_argument("--shift-method", choices=["phase", "windowed"], default=None,
+                   help="Correlation estimator (default: phase)")
     p.add_argument("--no-resample", action="store_true", help="Disable wavelength resampling")
     p.add_argument("--no-drift", action="store_true",
                    help="Disable spectral drift correction in the contrast stage")
     p.add_argument("--no-optical-flow", action="store_true", help="Disable optical-flow stabilisation")
     p.add_argument("--flow-method", choices=["tvl1", "farneback"], default=None)
+    p.add_argument("--flow-reference", choices=["default", "stable", "masked", "stable+masked"],
+                   default=None, help="Image the optical flow is computed on (default: Fe I or "
+                                      "Hα last wavelength)")
+    p.add_argument("--flow-channels", type=int, default=None,
+                   help="Channels averaged by --flow-reference stable (default 1)")
+    p.add_argument("--flare-threshold", type=float, default=None,
+                   help="Relative change masked by --flow-reference masked (default 0.1)")
 
     # Resume / step selection
     p.add_argument("--resume", action="store_true",
@@ -116,6 +140,14 @@ def config_from_args(args) -> Config:
         cfg.smooth_shifts = False
     if args.derotate:
         cfg.derotate = True
+    for name in ("align_mode", "reference", "reference_window", "drift_control", "disc_center",
+                 "shift_method", "flow_reference", "flow_channels", "flare_threshold"):
+        if getattr(args, name) is not None:
+            setattr(cfg, name, getattr(args, name))
+    if args.no_rotation:
+        cfg.rotation = False
+    if args.subpixel:
+        cfg.subpixel = True
     if args.no_resample:
         cfg.resample_wavelength = False
     if args.no_optical_flow:

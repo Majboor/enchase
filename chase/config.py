@@ -41,6 +41,28 @@ class Config:
     derotate : bool
         Rotate frames to solar north using the header INST_ROT angle before
         cropping; patch coordinates then refer to the north-up frame.
+    align_mode : str
+        ``"xcorr"`` (default), ``"header"`` or ``"header+xcorr"``: how the
+        crop shift is found (see :func:`chase.io.load_flare_sequence`).
+        ``"header"`` is the recommended mode for Hα-only data of quiet Sun,
+        filaments and the limb.
+    reference : str
+        Correlation reference: ``"first"`` (default), ``"previous"`` or
+        ``"running"``.
+    reference_window : int
+        Scans in the running-mean reference.
+    drift_control : str
+        ``"none"`` (default) or ``"header"``: tie chained correlation steps
+        back to the header pointing.
+    disc_center : str
+        ``"crpix"`` (default), ``"limb"`` or ``"auto"``: disc-centre source for
+        the header modes.
+    rotation : bool
+        Add differential rotation of the patch in the header modes.
+    subpixel : bool
+        Apply fractional shifts with a cubic spline instead of rounding.
+    shift_method : str
+        ``"phase"`` (default) or ``"windowed"`` correlation estimator.
     resample_wavelength : bool
         Per-frame wavelength resampling onto frame 0's grid.
     optical_flow : bool
@@ -49,6 +71,17 @@ class Config:
         ``"farneback"`` (default, as used in the paper) or ``"tvl1"``. TV-L1
         misregisters the flare peak, where the brightening breaks brightness
         constancy.
+    flow_reference : str
+        Image the optical flow is computed on: ``"default"`` (Fe I last
+        wavelength, else Hα last wavelength), ``"stable"`` (the far-wing
+        channel(s) that change least, see
+        :func:`chase.calib.select_flow_reference`), ``"masked"`` (default
+        image with brightening pixels ignored, see
+        :func:`chase.calib.flare_mask`) or ``"stable+masked"``.
+    flow_channels : int
+        Channels averaged by ``flow_reference="stable"``.
+    flare_threshold : float
+        Relative change above which ``"masked"`` ignores a pixel.
     ref_channel : str
         Alignment reference: ``"fe_last"`` or ``"ha_cont"``.
     contrast : bool
@@ -80,9 +113,20 @@ class Config:
     track: bool = True
     smooth_shifts: bool = True
     derotate: bool = False
+    align_mode: str = "xcorr"
+    reference: str = "first"
+    reference_window: int = 3
+    drift_control: str = "none"
+    disc_center: str = "crpix"
+    rotation: bool = True
+    subpixel: bool = False
+    shift_method: str = "phase"
     resample_wavelength: bool = True
     optical_flow: bool = True
     flow_method: str = "farneback"
+    flow_reference: str = "default"
+    flow_channels: int = 1
+    flare_threshold: float = 0.1
     ref_channel: str = "fe_last"
 
     contrast: bool = False

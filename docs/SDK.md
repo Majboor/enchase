@@ -59,6 +59,69 @@ What you get back:
 
 Switches: `track=False` disables crop tracking, `resample=False` keeps each frame's own wavelength grid. `derotate=True` rotates every frame to solar north using the header `INST_ROT` angle about the disc centre before cropping (patch coordinates then refer to the north-up frame).
 
+### Alignment modes (Hα-only data, long series)
+
+By default the crop shift of every scan comes from phase correlation of the
+tracking channel (Fe I last wavelength, else the Hα last wavelength) against
+scan 0. Two cases break this: Hα-only data of low-contrast fields (quiet Sun,
+filaments, the limb), and series longer than about 15 minutes of quiet Sun,
+where the granulation has changed. The loader has keyword options for both
+(all also in `Config`, the TOML file and the CLI):
+
+```python
+seq = chase.load_flare_sequence("/data/fits", patch=[1520, 1720, 1600, 1800], pad=30,
+                                align_mode="header",       # or "xcorr" (default), "header+xcorr"
+                                disc_center="crpix",       # or "limb", "auto"
+                                rotation=True,             # differential rotation of the patch
+                                subpixel=True)             # cubic fractional shifts
+seq = chase.load_flare_sequence("/data/fits", patch=[...],
+                                reference="running", reference_window=3,   # or "previous"
+                                drift_control="header",                    # tie back to the header
+                                shift_method="windowed")
+```
+
+* `align_mode="header"` takes the shift from the drift of the header disc
+  centre (`CRPIX1` = column, `CRPIX2` = row) plus Snodgrass differential
+  rotation of the patch centre. No image content is used.
+* `align_mode="header+xcorr"` reads each scan's window at the header
+  position and adds the correlation residual (rejected above
+  `max_residual`, 3 px).
+* `reference="previous"` / `"running"` chain scan-to-scan correlation steps;
+  `drift_control="header"` stops the chain from random-walking.
+* `disc_center="auto"` checks `CRPIX` against limb fits of three scans and
+  uses per-scan limb fits when they disagree (with a warning). From 2023-12 on
+  the header drift agrees with the limb to 0.10-0.23 px rms. The 2023-03
+  Level-1 headers are about 37 px off the limb, and there the odd and even
+  scans have field-dependent offsets of 8-11 px, so do not use the header
+  modes on those files.
+
+What we measured (Hα-only sets of 2023-12-29, 2024-10-03 and 2024-12-14, and
+the Fe I sets of 2023-03-29 and 2026-07-04; scripts and numbers in the
+revision material):
+
+* Quiet Sun, filaments, near-limb and off-limb fields, Hα only:
+  `align_mode="header"` takes the tracking error against the limb-fitted
+  pointing from 1.6-19 arcsec rms (v2.1) to 0.2-0.5 arcsec, and the
+  scan-to-scan Hα-core RMS from 2.8-10.8 % to 2.6-3.5 %. Optical flow on top
+  raised the core RMS of the on-disc fields to 4.1-5.7 %, so switch it off
+  (`optical_flow=False`) for them.
+* Quiet Sun over more than 15 minutes: against scan 0 the v2.1 tracking error
+  grows to 3.3-22 arcsec rms after 15 minutes (also with Fe I).
+  `reference="running"` with `drift_control="header"` keeps it at
+  0.3-0.6 arcsec. Without the tie to the header the chained reference drifts
+  to 0.7-5 arcsec.
+* Flares in Hα only (X9.0): cross-correlation works (6 % far-wing contrast)
+  and `align_mode="header+xcorr"` was best before flow. With
+  `flow_reference="stable"` the peak residual after flow drops from 1.10 to
+  0.92 px; `"masked"` made it worse (2.2 px).
+
+Flow reference for the optical flow (pipeline / CLI only):
+`flow_reference="stable"` uses the far-wing channel that changes least
+relative to its own contrast, `"masked"` ignores pixels that change by more
+than `flare_threshold` (0.1) of the median intensity. Lower level:
+`chase.select_flow_reference`, `chase.flare_mask`,
+`chase.optical_flow_align(..., mask=...)`.
+
 ## Stabilise
 
 ```python

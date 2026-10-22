@@ -66,6 +66,13 @@ from .calib import (
     resample_wavelength,
     track_and_crop,
     warp_cube,
+    select_flow_reference,
+    flare_mask,
+    header_disc_center,
+    header_shifts,
+    rotation_shift,
+    track_shifts,
+    tie_to_header,
 )
 
 # --- Analysis --------------------------------------------------------------
@@ -110,6 +117,8 @@ __all__ = [
     "derotate", "derotate_crop",
     "find_disk_center", "hough_disk_center", "recenter", "phase_shift",
     "track_and_crop", "optical_flow_align", "warp_cube",
+    "select_flow_reference", "flare_mask", "header_disc_center", "header_shifts",
+    "rotation_shift", "track_shifts", "tie_to_header",
     "create_optical_flow_solver", "resample_wavelength", "correct_spectral_drift",
     "align_spectrum", "normalize_intensity", "integral_scaling",
     "atlas_calibrate", "atlas_fit_quality", "quiet_sun_mask", "find_quiet_patch",
