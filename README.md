@@ -124,6 +124,24 @@ T, width = chase.halpha_width_temperature(ha_al[12], seq["wavelength_ha"])
 
 Each line works on its own. Full list with snippets: [docs/SDK.md](docs/SDK.md).
 
+Check how well each step worked (plain numbers, ready for a table):
+
+```python
+from chase.analysis import residual_pointing, residual_wavelength, frame_rms
+from chase.analysis import fit_limb_ellipse, offlimb_profile, psf_stray_light, throughput_trend
+from chase.calib import atlas_calibrate, atlas_sensitivity, activity_mask
+
+residual_pointing(fe_continuum_stack)["global_rms_arcsec"]    # leftover jitter after tracking/flow
+residual_wavelength(qs_profiles, per_scan_grids)["std_mA"]   # line-core scatter between scans
+atlas_calibrate(wav, dc_cube, mask=activity_mask(cont, ha_core), return_quality=True)
+atlas_sensitivity(wav, dc_cube)                                # ifact vs wing threshold and mask
+p = offlimb_profile(full_disc_image)                           # off-limb level, % of disc centre
+psf_stray_light(full_disc_image, p)["s_dc_range"]              # scattered fraction at disc centre
+throughput_trend(dates, ifact_per_date)["throughput_pct_per_yr"]
+```
+
+The pipeline does not correct stray light. For CHASE it is about 6–10 % of the disc-centre intensity, which makes small dark features (umbrae, filaments) look brighter than they are. The atlas factor changes by about 12 % per year, so fit it for each observation (the pipeline does this by default) rather than reusing one from another date. For Hα-only data use `wing_continuum_frac=0.75`: no Hα channel passes the 0.85 default, and `atlas_calibrate` warns about this.
+
 ## Prefer clicking to typing?
 
 ```bash
@@ -150,6 +168,8 @@ CHASE (the Chinese Hα Solar Explorer) scans the full solar disk in Hα (118 wav
 | `chase.calib.intensity` | quiet-Sun norm, integral scaling, FTS-atlas absolute calibration | <img src="assets/atlas_calibration.png" width="220"> |
 | `chase.analysis.contrast` | wavelength-vs-time flare contrast | <img src="assets/contrast_profile.png" width="220"> |
 | `chase.analysis.temperature` | Hα width to T (Molnar), Fe I to T (Planck / EB / Voigt) | <img src="assets/double_temp_map_peak.png" width="220"> |
+| `chase.analysis.validation` | residual pointing (arcsec), wavelength scatter (mÅ, km/s), frame-to-frame RMS (%, cgs) | |
+| `chase.analysis.systematics` | stray light from the off-limb profile, throughput trend of the atlas factor | |
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/Majboor/enchase/main/assets/temperature.gif" width="720" alt="Double temperature map animation"><br>

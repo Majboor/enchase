@@ -52,7 +52,10 @@ def resample_wavelength(
     """
     from scipy.interpolate import interp1d
 
-    if np.allclose(src_wavelengths, dst_wavelengths, atol=1e-6):
+    # rtol must be 0: numpy's default rtol=1e-5 is ~0.066 Å at 6560 Å, larger
+    # than the real CHASE zero-point drift (~0.04 Å), which silently skipped the
+    # resampling for every real frame in v2.0–2.1.0.
+    if np.allclose(src_wavelengths, dst_wavelengths, rtol=0.0, atol=1e-6):
         return cube.astype(np.float32, copy=True)
 
     nch, H, W = cube.shape

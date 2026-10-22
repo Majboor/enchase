@@ -1,4 +1,4 @@
-"""Science analysis: contrast profiles and temperature maps."""
+"""Science analysis: contrast profiles, temperature maps, validation and systematics."""
 
 from .contrast import contrast_profile
 from .temperature import (
@@ -9,6 +9,15 @@ from .temperature import (
     halpha_width_temperature,
     measure_halpha_width,
     width_to_temperature,
+)
+from .systematics import (
+    contrast_bias,
+    decimal_year,
+    fit_limb_ellipse,
+    limb_coordinates,
+    offlimb_profile,
+    psf_stray_light,
+    throughput_trend,
 )
 from .validation import (
     frame_rms,
@@ -32,4 +41,11 @@ __all__ = [
     "residual_wavelength",
     "frame_rms",
     "stray_light_estimate",
+    "fit_limb_ellipse",
+    "limb_coordinates",
+    "offlimb_profile",
+    "psf_stray_light",
+    "contrast_bias",
+    "decimal_year",
+    "throughput_trend",
 ]

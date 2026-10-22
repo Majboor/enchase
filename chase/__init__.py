@@ -24,7 +24,7 @@ from __future__ import annotations
 
 from . import _compat  # noqa: F401  (lzma stub + headless matplotlib)
 
-__version__ = "2.1.0"
+__version__ = "2.1.1"
 
 # --- I/O -------------------------------------------------------------------
 from .io import (
@@ -45,11 +45,15 @@ from .calib import (
     align_spectrum,
     derotate,
     derotate_crop,
+    activity_mask,
     atlas_calibrate,
+    atlas_factor_series,
     atlas_fit_quality,
+    atlas_sensitivity,
     correct_spectral_drift,
     find_quiet_patch,
     quiet_sun_mask,
+    wing_channels,
     create_optical_flow_solver,
     find_disk_center,
     hough_disk_center,
@@ -76,6 +80,11 @@ from .analysis import (
     residual_pointing,
     residual_wavelength,
     stray_light_estimate,
+    fit_limb_ellipse,
+    offlimb_profile,
+    psf_stray_light,
+    contrast_bias,
+    throughput_trend,
     halpha_width_temperature,
     width_to_temperature,
 )
@@ -104,6 +113,7 @@ __all__ = [
     "create_optical_flow_solver", "resample_wavelength", "correct_spectral_drift",
     "align_spectrum", "normalize_intensity", "integral_scaling",
     "atlas_calibrate", "atlas_fit_quality", "quiet_sun_mask", "find_quiet_patch",
+    "activity_mask", "wing_channels", "atlas_sensitivity", "atlas_factor_series",
     "planck_inversion",
     # analysis
     "contrast_profile", "halpha_width_map", "halpha_width_temperature",
@@ -112,6 +122,9 @@ __all__ = [
     # validation
     "residual_pointing", "line_centroid", "residual_wavelength", "frame_rms",
     "stray_light_estimate",
+    # systematics
+    "fit_limb_ellipse", "offlimb_profile", "psf_stray_light", "contrast_bias",
+    "throughput_trend",
     # viz
     "make_animation", "make_contrast_animation", "make_temperature_animation",
     # orchestration

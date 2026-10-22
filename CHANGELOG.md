@@ -3,6 +3,44 @@
 All notable changes to this project are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.1.1] — 2026-10-22
+
+Second round of changes for the Solar Physics referee report: code used for
+the validation, stray-light, throughput and threshold analyses, plus two bug
+fixes found while measuring them.
+
+### Fixed
+- **`resample_wavelength` now resamples real CHASE data.** Its "grids are
+  equal" shortcut used `np.allclose` with numpy's default `rtol=1e-5`, which
+  is about 0.066 Å at 6560 Å and larger than the real per-scan zero-point
+  drift (0.01–0.06 Å). Every real frame was returned unchanged in 2.0–2.1.0,
+  so the drift was only partly removed (by the cross-correlation fallback).
+  The check now uses `rtol=0`. With the fix the scan-to-scan scatter of the
+  Fe I and Hα line cores drops from 12–28 mÅ to 0.9–1.4 mÅ on the test data.
+  Outputs made with 2.1.0 or earlier should be regenerated.
+- **`robust_shifts` no longer moves the reference frame.** New `ref_idx`
+  argument: the reference (shift 0 by construction) is never treated as an
+  outlier. `load_flare_sequence` passes `ref_idx=0`. Before, a reference that
+  lay off its parity's trend was "repaired" (e.g. by 8 px on a near-limb
+  field), which shifted the whole tracked sequence.
+- `atlas_calibrate` warns when no channel passes `wing_continuum_frac`
+  (the case for Hα at the 0.85 default, where all channels, line core
+  included, were silently given equal weight).
+
+### Added
+- **`chase.analysis.systematics`** — `fit_limb_ellipse` (sub-pixel limb,
+  axis-aligned ellipse), `limb_coordinates`, `offlimb_profile` (sector median
+  of the off-limb level with prominence / active-limb rejection),
+  `psf_stray_light` (halo-model fit, scattered fraction at disc centre),
+  `contrast_bias`, `decimal_year` and `throughput_trend` (exponential fit of
+  the atlas factor against date, % per year with standard error and
+  jackknife range).
+- `chase.calib.intensity`: `activity_mask` (Fe I continuum within 3 % and
+  Hα core no more than 10 % above the median), `wing_channels` (which channels
+  the atlas fit up-weights), `atlas_sensitivity` (ifact change and
+  brightness-temperature change per threshold and mask) and
+  `atlas_factor_series` (ifact for every scan, with scatter).
+
 ## [2.1.0] — 2026-10-22 (renamed to `enchase`)
 
 Changes made for the Solar Physics referee report on the enCHASE paper.

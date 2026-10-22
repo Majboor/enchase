@@ -20,13 +20,17 @@ from .wavelength import (
     resample_wavelength,
 )
 from .intensity import (
+    activity_mask,
     atlas_calibrate,
+    atlas_factor_series,
+    atlas_sensitivity,
     atlas_fit_quality,
     find_quiet_patch,
     integral_scaling,
     normalize_intensity,
     planck_inversion,
     quiet_sun_mask,
+    wing_channels,
 )
 
 __all__ = [
@@ -48,10 +52,14 @@ __all__ = [
     "cross_correlation_shift",
     "resample_wavelength",
     # intensity
+    "activity_mask",
     "atlas_calibrate",
+    "atlas_factor_series",
     "atlas_fit_quality",
+    "atlas_sensitivity",
     "find_quiet_patch",
     "quiet_sun_mask",
+    "wing_channels",
     "integral_scaling",
     "normalize_intensity",
     "planck_inversion",

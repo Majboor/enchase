@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "enchase"
-version = "2.1.0"
+version = "2.1.1"
 description = "enCHASE: calibration and analysis pipeline for CHASE/HIS solar spectroscopy (TUI + SDK + CLI)"
 readme = "README.md"
 license = { text = "MIT" }

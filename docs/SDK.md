@@ -185,6 +185,43 @@ run_pipeline(Config(fits_dir="/data/fits", out_dir="./chase_out",
 
 `progress=` takes a `(stage, message)` callback for live UIs. `load_config("file.toml")` builds a `Config` from TOML; every field maps one to one. The full field list is the `Config` docstring, or [examples/config.toml](../examples/config.toml) annotated.
 
+## Validate and measure systematics
+
+Every function returns plain numbers (dicts of floats), so a run can be written to JSON.
+
+```python
+from chase.analysis import (residual_pointing, residual_wavelength, frame_rms,
+                            fit_limb_ellipse, offlimb_profile, psf_stray_light,
+                            contrast_bias, throughput_trend)
+from chase.calib import (atlas_calibrate, atlas_sensitivity, atlas_factor_series,
+                         activity_mask, wing_channels)
+
+# pointing: measure on a channel NOT used for tracking/flow (e.g. Fe I 6567.5 Å)
+residual_pointing(stack, pixel_scale=1.04)        # global_rms_arcsec, local_p95_arcsec, ...
+# wavelength: one quiet-Sun profile + its own grid per scan
+residual_wavelength(profiles, grids, rest_wavelength=6569.214)   # std_mA, std_kms
+frame_rms(stack, ifact=2.3e-8)                    # rms_pct, rms_cgs
+
+# atlas calibration: which channels count as wings, and how much the choice matters
+wing_channels(wav_fe, 0.85)                       # 41 of 46 Fe I channels (core left out)
+mask = activity_mask(fe_cube[-1], ha_core)        # continuum within 3 %, Hα core <= +10 %
+atlas_calibrate(wav_fe, fe_cube, mask=mask, return_quality=True)
+atlas_sensitivity(wav_fe, fe_cube)                # delta_pct / delta_T_K per threshold and mask
+atlas_factor_series([(wav_i, cube_i) for ...])    # ifact per scan, ifact_sd_pct
+
+# stray light from one full-disc continuum / far-wing image
+L = fit_limb_ellipse(img)                         # ellipse centre and semi-axes, px
+p = offlimb_profile(img, limb=L, core_image=ha_core_img)   # fraction at 1.02/1.05/1.10/1.20 R
+s = psf_stray_light(img, p)                       # s_dc per halo model, s_dc_range
+contrast_bias(0.20, s["s_dc_range"][1])           # how dark an umbra at 0.20 appears
+
+# throughput: mean ifact of data sets taken on different dates (same exposure, binning)
+throughput_trend(["2023-03-29T02:12", "2024-10-03T12:02", "2026-07-04T13:29"],
+                 [2.31e-8, 2.79e-8, 3.44e-8])     # throughput_pct_per_yr, *_se, jackknife
+```
+
+`psf_stray_light` only constrains the halo outside about 1.03 R, so treat `s_dc` as an order of magnitude. The off-limb level also contains any detector offset.
+
 ## Backward compatibility
 
 The pre-2.0 flat API still works: `from chase.core import run_pipeline, load_fits_data, find_disk_center, ...`. New code should import from the top level as above.

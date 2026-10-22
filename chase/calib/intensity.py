@@ -16,12 +16,14 @@ temperature, used by the Fe I photospheric temperature maps.
 
 from __future__ import annotations
 
-from typing import Optional, Tuple
+import warnings
+from typing import Dict, Iterable, Optional, Sequence, Tuple
 
 import numpy as np
 
 __all__ = ["normalize_intensity", "integral_scaling", "atlas_calibrate", "atlas_fit_quality",
-           "quiet_sun_mask", "find_quiet_patch", "planck_inversion"]
+           "quiet_sun_mask", "activity_mask", "find_quiet_patch", "wing_channels",
+           "atlas_sensitivity", "atlas_factor_series", "planck_inversion"]
 
 # CGS physical constants
 _H = 6.62607015e-27   # erg s
@@ -95,6 +97,80 @@ def quiet_sun_mask(
     core = cube[core_channel]
     c_med, k_med = np.nanmedian(cont), np.nanmedian(core)
     return (np.abs(cont / c_med - 1.0) <= continuum_tol) & (np.abs(core / k_med - 1.0) <= core_tol)
+
+
+def activity_mask(
+    continuum: np.ndarray,
+    core: np.ndarray,
+    continuum_tol: float = 0.03,
+    core_excess: float = 0.10,
+) -> np.ndarray:
+    """Quiet-Sun mask from a continuum image and a separate chromospheric core.
+
+    A stricter, two-line variant of :func:`quiet_sun_mask` for a calibration
+    patch: a pixel is kept only if its continuum lies within ``continuum_tol``
+    of the patch median (rejects umbrae, penumbrae and pores, whose continuum
+    is 0.75–0.92 of the quiet Sun) **and** its Hα line-core intensity is no
+    more than ``core_excess`` above the patch median (rejects plage and
+    network, which are bright in the Hα core but nearly invisible in the
+    Fe I window). Dark Hα features (fibrils, filaments) are kept, since
+    they do not change the photospheric Fe I profile.
+
+    Parameters
+    ----------
+    continuum : ndarray (H, W)
+        Continuum image of the patch (e.g. the last Fe I channel).
+    core : ndarray (H, W)
+        Hα line-core image of the same patch (channel nearest 6562.8 Å).
+    continuum_tol : float, optional
+        Allowed fractional continuum deviation from the median (default 3 %).
+    core_excess : float, optional
+        Allowed fractional Hα-core excess over the median (default 10 %).
+
+    Returns
+    -------
+    mask : ndarray (H, W) of bool
+        ``True`` where the pixel is quiet Sun. Pass it to
+        :func:`atlas_calibrate` as ``mask=``.
+    """
+    cont = np.asarray(continuum, dtype=float)
+    k = np.asarray(core, dtype=float)
+    return ((np.abs(cont / np.nanmedian(cont) - 1.0) <= continuum_tol)
+            & (k / np.nanmedian(k) - 1.0 <= core_excess))
+
+
+def wing_channels(wavelengths: np.ndarray, wing_continuum_frac: float = 0.85) -> np.ndarray:
+    """Indices of the channels :func:`atlas_calibrate` treats as line wings.
+
+    A channel is a wing channel when the FTS atlas, interpolated onto the
+    observed grid, exceeds ``wing_continuum_frac`` of the atlas continuum.
+    This is a selection in wavelength, not in pixels.
+
+    For the CHASE Fe I window (6567.5–6569.7 Å, in the far red wing of Hα)
+    every channel outside the Fe I line is at 0.88–0.92 of the continuum, so
+    thresholds 0.70–0.85 select the same 41–43 of 46 channels and leave out
+    only the Fe I core. No channel of the Hα window (6559.4–6565.1 Å)
+    exceeds 0.85; use about 0.75 for Hα.
+
+    Parameters
+    ----------
+    wavelengths : ndarray (nchannels,)
+        Observed wavelength grid in Å.
+    wing_continuum_frac : float, optional
+        Threshold as a fraction of the atlas continuum (default 0.85).
+
+    Returns
+    -------
+    ndarray of int
+        Channel indices (may be empty).
+    """
+    from ISPy.spec import atlas as isp_atlas
+    from scipy.interpolate import interp1d
+
+    wav = np.asarray(wavelengths, dtype=float)
+    w, sp, c = isp_atlas.atlas().get(wav[0] - 0.5, wav[-1] + 0.5, cgs=True, perHz=True)
+    a = interp1d(w, sp, kind="cubic", bounds_error=False, fill_value="extrapolate")(wav)
+    return np.where(a > wing_continuum_frac * c[0])[0]
 
 
 def find_quiet_patch(
@@ -191,7 +267,7 @@ def atlas_fit_quality(
         "n_wing": int(wing.sum()),
         "chi2_red": None,
     }
-    if sigma is not None and wing.sum() > 2:
+    if sigma is not None and wing.sum() > 2 and np.all(np.asarray(sigma)[wing] > 0):
         s = np.asarray(sigma, dtype=float) * ifact
         out["chi2_red"] = float(np.sum(((model - atlas)[wing] / s[wing]) ** 2) / (wing.sum() - 2))
     return out
@@ -222,7 +298,9 @@ def atlas_calibrate(
     disk_center_cube : ndarray (nchannels, H, W)
         Disk-centre Fe I cube (e.g. the 100×100 CRPIX patch, single frame).
     wing_continuum_frac : float, optional
-        Threshold (fraction of continuum) above which a channel counts as wing.
+        Threshold (fraction of continuum) above which a channel counts as wing
+        (see :func:`wing_channels`). The default 0.85 suits Fe I; it selects no
+        Hα channel (a ``UserWarning`` is raised), so use 0.75 for Hα.
     mask_active : bool, optional
         Average only the pixels kept by :func:`quiet_sun_mask` (default False,
         the v2.0 behaviour).
@@ -275,6 +353,14 @@ def atlas_calibrate(
     f_atlas = interp1d(wave_fts, spec_fts, kind="cubic", bounds_error=False, fill_value="extrapolate")
     atlas_at_obs = f_atlas(wavelengths)
     wing_idx = np.where(atlas_at_obs > wing_continuum_frac * cont_fts[0])[0]
+    if len(wing_idx) == 0:
+        warnings.warn(
+            f"atlas_calibrate: no channel of the atlas exceeds wing_continuum_frac="
+            f"{wing_continuum_frac} of the continuum in {wavelengths[0]:.2f}-"
+            f"{wavelengths[-1]:.2f} Å, so all channels (line core included) get equal "
+            "weight. For Hα use wing_continuum_frac=0.75.",
+            UserWarning, stacklevel=2,
+        )
 
     # ISPy's differential evolution draws from NumPy's global RNG.
     state = np.random.get_state()
@@ -294,6 +380,131 @@ def atlas_calibrate(
     quality = atlas_fit_quality(wavelengths, fe_avg, ifact, woff, wing_continuum_frac, sigma=sigma)
     quality["n_pixels"] = int(pix.shape[1])
     return ifact, woff, quality
+
+
+def atlas_sensitivity(
+    wavelengths: np.ndarray,
+    disk_center_cube: np.ndarray,
+    thresholds: Sequence[float] = (0.70, 0.75, 0.80, 0.85, 0.90, 0.95),
+    masks: Optional[Dict[str, Optional[np.ndarray]]] = None,
+    reference_threshold: float = 0.85,
+    continuum_channel: int = -1,
+    seed: Optional[int] = 0,
+) -> dict:
+    """Sensitivity of the atlas calibration to the wing threshold and pixel mask.
+
+    Runs :func:`atlas_calibrate` for every combination of ``thresholds`` and
+    ``masks`` on one disc-centre patch and reports each result relative to
+    the reference fit (``reference_threshold``, no mask). To test the box
+    position or size, call it on different patches and compare the reference
+    values (correct for limb darkening when the box is off centre).
+
+    Parameters
+    ----------
+    wavelengths : ndarray (nchannels,)
+    disk_center_cube : ndarray (nchannels, H, W)
+    thresholds : sequence of float, optional
+        Values of ``wing_continuum_frac`` to test.
+    masks : dict of str -> (H, W) bool array or None, optional
+        Pixel masks to test, by name. Default: ``{"none": None,
+        "quiet_sun_mask": quiet_sun_mask(cube)}``.
+    reference_threshold : float, optional
+        Threshold of the reference fit (default 0.85, the pipeline default).
+    continuum_channel : int, optional
+        Channel used for the brightness-temperature change (default: last,
+        the Fe I continuum).
+    seed : int or None, optional
+        Optimiser seed passed to :func:`atlas_calibrate`.
+
+    Returns
+    -------
+    dict with ``reference`` (``ifact``, ``woff``, ``n_wing``, ``T_K``,
+    ``K_per_pct``: brightness-temperature change per 1 % in ``ifact``) and
+    ``fits``: one dict per (threshold, mask) with ``threshold``, ``mask``,
+    ``n_wing``, ``kept_frac``, ``ifact``, ``woff``, ``delta_pct`` (change of
+    ``ifact`` in %), ``delta_T_K`` and ``rms_wings_pct``.
+    """
+    cube = np.asarray(disk_center_cube, dtype=float)
+    wav = np.asarray(wavelengths, dtype=float)
+    if masks is None:
+        masks = {"none": None, "quiet_sun_mask": quiet_sun_mask(cube)}
+    lam_c = float(wav[continuum_channel])
+    i_c = float(cube[continuum_channel].mean())
+
+    ref_ifact, ref_woff = atlas_calibrate(wav, cube, wing_continuum_frac=reference_threshold, seed=seed)
+    t_ref = float(planck_inversion(i_c * ref_ifact, lam_c))
+    k_per_pct = float(planck_inversion(i_c * ref_ifact * 1.01, lam_c)) - t_ref
+    out = {"reference": {"threshold": float(reference_threshold), "ifact": ref_ifact, "woff": ref_woff,
+                         "n_wing": int(len(wing_channels(wav, reference_threshold))),
+                         "T_K": t_ref, "K_per_pct": k_per_pct},
+           "fits": []}
+    for thr in thresholds:
+        n_wing = int(len(wing_channels(wav, thr)))
+        for name, m in masks.items():
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", UserWarning)
+                ifact, woff, q = atlas_calibrate(wav, cube, wing_continuum_frac=thr, mask=m,
+                                                 return_quality=True, seed=seed)
+            i_m = float(cube[continuum_channel][m].mean()) if m is not None and np.any(m) else i_c
+            out["fits"].append({
+                "threshold": float(thr), "mask": name, "n_wing": n_wing,
+                "kept_frac": float(np.mean(m)) if m is not None else 1.0,
+                "ifact": ifact, "woff": woff,
+                "delta_pct": 100.0 * (ifact / ref_ifact - 1.0),
+                "delta_T_K": float(planck_inversion(i_m * ifact, lam_c)) - t_ref,
+                "rms_wings_pct": q["rms_wings_pct"],
+            })
+    return out
+
+
+def atlas_factor_series(
+    scans: Iterable[Tuple[np.ndarray, np.ndarray]],
+    wing_continuum_frac: float = 0.85,
+    mask_active: bool = False,
+    seed: Optional[int] = 0,
+) -> dict:
+    """Atlas calibration factor for every scan of a sequence.
+
+    Fits each scan independently with :func:`atlas_calibrate` and summarises
+    the scatter. The scan-to-scan spread is the repeatability of the
+    calibration; comparing the mean between observing dates (at the same
+    exposure time and binning) measures the throughput change of the
+    instrument (see :func:`chase.analysis.systematics.throughput_trend`).
+
+    Parameters
+    ----------
+    scans : iterable of (wavelengths, disk_center_cube)
+        One wavelength grid and disc-centre patch per scan.
+    wing_continuum_frac : float, optional
+        Wing threshold (0.85 for Fe I, 0.75 for Hα).
+    mask_active : bool, optional
+        Passed to :func:`atlas_calibrate`.
+    seed : int or None, optional
+        Optimiser seed.
+
+    Returns
+    -------
+    dict with per-scan ``ifact``, ``woff`` and ``rms_wings_pct`` lists, and
+    ``ifact_mean``, ``ifact_sd_pct`` (standard deviation over scans, % of the
+    mean), ``ifact_ptp_pct``, ``woff_mean`` and ``woff_sd``.
+    """
+    ifs, wos, rms = [], [], []
+    for wav, cube in scans:
+        i, w, q = atlas_calibrate(wav, cube, wing_continuum_frac=wing_continuum_frac,
+                                  mask_active=mask_active, return_quality=True, seed=seed)
+        ifs.append(i)
+        wos.append(w)
+        rms.append(q["rms_wings_pct"])
+    a, b = np.asarray(ifs), np.asarray(wos)
+    sd = float(np.std(a, ddof=1)) if len(a) > 1 else 0.0
+    return {
+        "ifact": a.tolist(), "woff": b.tolist(), "rms_wings_pct": rms,
+        "ifact_mean": float(a.mean()),
+        "ifact_sd_pct": 100.0 * sd / float(a.mean()),
+        "ifact_ptp_pct": 100.0 * float(np.ptp(a)) / float(a.mean()),
+        "woff_mean": float(b.mean()),
+        "woff_sd": float(np.std(b, ddof=1)) if len(b) > 1 else 0.0,
+    }
 
 
 def planck_inversion(I_nu, wavelength_ang: float = 6569.0):

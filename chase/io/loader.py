@@ -31,7 +31,7 @@ from .download import discover_fits
 __all__ = ["load_flare_sequence", "robust_shifts"]
 
 
-def robust_shifts(shifts, threshold=4.0, verbose=False):
+def robust_shifts(shifts, threshold=4.0, verbose=False, ref_idx=None):
     """Reject per-frame tracking outliers, treating odd and even scans separately.
 
     CHASE RSM scans alternate raster direction, so odd and even frames can carry
@@ -52,6 +52,13 @@ def robust_shifts(shifts, threshold=4.0, verbose=False):
         Outlier rejection threshold in pixels (default 4).
     verbose : bool, optional
         Print each corrected frame.
+    ref_idx : int or None, optional
+        Index of the reference frame the shifts were measured against. Its
+        shift is (0, 0) by construction, so it is never treated as an outlier
+        and is kept as measured; otherwise a reference that lies off the
+        trend of the other frames of its parity would itself be moved, which
+        shifts the whole tracked series. ``None`` (default) keeps the v2.1.0
+        behaviour; :func:`load_flare_sequence` passes ``ref_idx=0``.
 
     Returns
     -------
@@ -73,6 +80,8 @@ def robust_shifts(shifts, threshold=4.0, verbose=False):
             slope, intercept, _, _ = theilslopes(series, x)
             fit = intercept + slope * x
             bad = np.abs(series - fit) > threshold
+            if ref_idx is not None:
+                bad &= idx != ref_idx
             if bad.all() or not bad.any():
                 continue
             # Replace by interpolating the surviving neighbours rather than the
@@ -220,7 +229,7 @@ def load_flare_sequence(
             sy, sx = phase_shift(ref_crop, cur)
             shifts.append((float(sy), float(sx)))
         if smooth_shifts:
-            shifts = robust_shifts(shifts, verbose=verbose)
+            shifts = robust_shifts(shifts, verbose=verbose, ref_idx=0)
         shifts = [(int(round(sy)), int(round(sx))) for sy, sx in shifts]
     else:
         shifts = [(0, 0)] * nframes
