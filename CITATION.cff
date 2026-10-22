@@ -8,7 +8,7 @@ authors:
     orcid: "https://orcid.org/0009-0006-8222-1983"
 repository-code: "https://github.com/Majboor/enchase"
 url: "https://pypi.org/project/enchase/"
-version: "2.1.1"
+version: "2.2.0"
 license: MIT
 keywords:
   - solar physics

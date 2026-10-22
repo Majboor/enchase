@@ -5,8 +5,13 @@ All notable changes to this project are documented here. Format loosely follows
 
 ## [Unreleased]
 
-Alignment options for Hα-only data and long series (Solar Physics referee
-revision). All defaults are unchanged, so existing results do not change.
+## [2.2.0] — 2026-10-23
+
+Alignment, limb-fit and centre-to-limb options from the Solar Physics referee
+revision. All defaults are unchanged, so existing results do not change
+(checked: the 2.1.1 tests pass unmodified, and default `run_pipeline` runs
+on real data give bit-identical aligned cubes and shifts to 2.1.1: X1.2
+Fe I + Hα, 10 scans; Hα-only quiet Sun 2023-12-29, 18 scans; M3.2, 13 scans).
 
 ### Added
 - **Header recentring:** `load_flare_sequence(..., align_mode="header")`
@@ -36,6 +41,24 @@ revision). All defaults are unchanged, so existing results do not change.
   `limb_disc_centers`, `solar_b0`, `rotation_shift`, `header_shifts`,
   `windowed_shift`, `track_shifts`, `tie_to_header`; and
   `chase.io.alignment_shifts` (the loader's pass 1 on windows in memory).
+- **Sub-pixel limb fit** (`chase.calib.spatial`): `limb_points`, `fit_limb`
+  (`model="circle"` or `"ellipse"`, a rotated ellipse with centre, two
+  semi-axes and angle, with MAD clipping of rays that cross prominences or
+  the detector edge), `limb_disk_center` and `limb_shifts` (per-scan
+  recentring shifts, integer or sub-pixel). 0.6–2 s per 2300×2300 frame,
+  against 70–120 s for `hough_disk_center`. On the X1.2 and M3.2 full-disc
+  data the residual disc-centre motion, measured independently on on-disc
+  structure, is 2.7″ and 0.6″ RMS with the limb fit, against 5.0″ and 1.0″
+  with Hough. `hough_disk_center` is unchanged.
+- **Centre-to-limb variation for the atlas calibration**
+  (`chase.calib.intensity`): `atlas_calibrate(..., mu=, clv_table=)` and
+  `atlas_fit_quality(..., mu=, clv_table=)` multiply the FTS atlas by the
+  quiet-Sun CLV of the averaged pixels, so a box away from disc centre gives
+  the disc-centre DN→radiance factor. `limb_darkening` (Neckel & Labs 1994,
+  the table shipped with ISPy), `download_clv_table` / `load_clv_table`
+  (Pietrow et al. 2023, A&A 671, A130, CDS J/A+A/671/A130, SHA-256 checked),
+  `clv_factor`, `clv_reference` (quiet-Sun reference profile at μ) and
+  `mu_map`. The default `mu=1.0` keeps the 2.1 behaviour.
 
 ### Checked
 - **No `CRPIX1`/`CRPIX2` axis swap.** `CRPIX1` is the column (x) and

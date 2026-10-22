@@ -10,6 +10,15 @@ Three levels, cheapest first:
   non-LTE/smeared) at disk centre (``mu=1.0``).  ISPy is an *optional* dependency
   — the rest of the package works without it.
 
+:func:`atlas_calibrate` takes ``mu`` (a number or a per-pixel map) to calibrate
+on a box away from disc centre. The atlas is then multiplied by the
+centre-to-limb variation (CLV) I(λ, μ)/I(λ, 1)
+(:func:`clv_factor`): Neckel & Labs (1994) continuum limb darkening
+(:func:`limb_darkening`, the table shipped with ISPy), or, inside the Hα line,
+the observed SST/CRISP profiles of Pietrow et al. (2023, A&A 671, A130), which
+are public at CDS (:func:`download_clv_table`, :func:`load_clv_table`).
+:func:`clv_reference` gives the quiet-Sun reference profile at any ``mu``.
+
 :func:`planck_inversion` converts an absolute radiance to a brightness
 temperature, used by the Fe I photospheric temperature maps.
 """
@@ -23,7 +32,9 @@ import numpy as np
 
 __all__ = ["normalize_intensity", "integral_scaling", "atlas_calibrate", "atlas_fit_quality",
            "quiet_sun_mask", "activity_mask", "find_quiet_patch", "wing_channels",
-           "atlas_sensitivity", "atlas_factor_series", "planck_inversion"]
+           "atlas_sensitivity", "atlas_factor_series", "planck_inversion",
+           "limb_darkening", "download_clv_table", "load_clv_table", "clv_factor",
+           "clv_reference", "mu_map"]
 
 # CGS physical constants
 _H = 6.62607015e-27   # erg s
@@ -225,6 +236,8 @@ def atlas_fit_quality(
     woff: float,
     wing_continuum_frac: float = 0.85,
     sigma: Optional[np.ndarray] = None,
+    mu=1.0,
+    clv_table: Optional[dict] = None,
 ) -> dict:
     """Goodness of fit of an atlas calibration.
 
@@ -242,6 +255,9 @@ def atlas_fit_quality(
     sigma : ndarray (nchannels,) or None, optional
         1σ uncertainty of ``spectrum`` in DN (e.g. the spatial standard
         deviation over the patch divided by √N). Needed for a reduced χ².
+    mu, clv_table : optional
+        As in :func:`atlas_calibrate`; the atlas is compared at this μ and the
+        residuals are in % of the continuum at this μ.
 
     Returns
     -------
@@ -255,11 +271,16 @@ def atlas_fit_quality(
     wave_fts, spec_fts, cont_fts = fts.get(
         wavelengths[0] - 0.5, wavelengths[-1] + 0.5, cgs=True, perHz=True
     )
+    wing = np.interp(wavelengths, wave_fts, spec_fts) > wing_continuum_frac * float(cont_fts[0])
+    cont = float(cont_fts[0])
+    mu_arr = np.asarray(mu, dtype=float)
+    if not (mu_arr.ndim == 0 and float(mu_arr) == 1.0):
+        scale = _mean_clv(wave_fts, mu_arr.ravel(), clv_table)
+        spec_fts = spec_fts * scale
+        cont = cont * float(limb_darkening(np.array([wave_fts[0]]), mu_arr.ravel()).mean())
     atlas = np.interp(wavelengths, wave_fts - woff, spec_fts)
     model = np.asarray(spectrum, dtype=float) * ifact
-    cont = float(cont_fts[0])
     resid = (model - atlas) / cont
-    wing = np.interp(wavelengths, wave_fts, spec_fts) > wing_continuum_frac * cont
     out = {
         "rms_wings_pct": float(100 * np.sqrt(np.mean(resid[wing] ** 2))) if wing.any() else None,
         "rms_all_pct": float(100 * np.sqrt(np.mean(resid ** 2))),
@@ -281,6 +302,8 @@ def atlas_calibrate(
     mask: Optional[np.ndarray] = None,
     return_quality: bool = False,
     seed: Optional[int] = 0,
+    mu=1.0,
+    clv_table: Optional[dict] = None,
 ):
     """Absolute DN→radiance calibration against the FTS atlas (ISPy).
 
@@ -311,6 +334,17 @@ def atlas_calibrate(
     seed : int or None, optional
         Seed for ISPy's differential-evolution optimiser, so repeated calls give
         identical results (default 0; ``None`` → unseeded).
+    mu : float or ndarray (H, W), optional
+        Heliocentric μ of the box (default 1.0, disc centre, the v2.1
+        behaviour). For a box off disc centre pass its μ, or a per-pixel μ map
+        (:func:`mu_map`); the atlas is then multiplied by the mean
+        centre-to-limb factor of the averaged pixels (:func:`clv_factor`), so
+        ``ifact`` stays the DN→radiance factor of the disc-centre calibration.
+    clv_table : dict or None, optional
+        Line CLV table from :func:`load_clv_table` (e.g. Pietrow et al. 2023
+        for Hα). ``None`` → continuum limb darkening only (Neckel & Labs 1994),
+        which is right for the far wings and Fe I continuum but not for the
+        Hα core.
 
     Returns
     -------
@@ -353,6 +387,15 @@ def atlas_calibrate(
     f_atlas = interp1d(wave_fts, spec_fts, kind="cubic", bounds_error=False, fill_value="extrapolate")
     atlas_at_obs = f_atlas(wavelengths)
     wing_idx = np.where(atlas_at_obs > wing_continuum_frac * cont_fts[0])[0]
+    mu_arr = np.asarray(mu, dtype=float)
+    if mu_arr.ndim == 0 and float(mu_arr) == 1.0:
+        mu_pix = None
+    elif mu_arr.ndim == 0:
+        mu_pix = mu_arr.reshape(1)
+    else:
+        mu_pix = mu_arr[mask] if (mask is not None and np.any(mask)) else mu_arr.ravel()
+    if mu_pix is not None:
+        spec_fts = spec_fts * _mean_clv(wave_fts, mu_pix, clv_table)
     if len(wing_idx) == 0:
         warnings.warn(
             f"atlas_calibrate: no channel of the atlas exceeds wing_continuum_frac="
@@ -377,7 +420,8 @@ def atlas_calibrate(
     if not return_quality:
         return ifact, woff
     sigma = pix.std(axis=1) / np.sqrt(pix.shape[1])
-    quality = atlas_fit_quality(wavelengths, fe_avg, ifact, woff, wing_continuum_frac, sigma=sigma)
+    quality = atlas_fit_quality(wavelengths, fe_avg, ifact, woff, wing_continuum_frac, sigma=sigma,
+                                mu=mu if mu_pix is not None else 1.0, clv_table=clv_table)
     quality["n_pixels"] = int(pix.shape[1])
     return ifact, woff, quality
 
@@ -505,6 +549,254 @@ def atlas_factor_series(
         "woff_mean": float(b.mean()),
         "woff_sd": float(np.std(b, ddof=1)) if len(b) > 1 else 0.0,
     }
+
+# ---------------------------------------------------------------- CLV ------
+#: Pietrow et al. (2023, A&A 671, A130) CLV tables at CDS (J/A+A/671/A130),
+#: with the SHA-256 of the files as downloaded on 2026-10-22.
+CLV_CDS_URL = "https://cdsarc.cds.unistra.fr/ftp/J/A+A/671/A130/fits/"
+CLV_SHA256 = {
+    "6563_clv.fits": "704c32a3d949554c4b85b4d3014448bed8035aa0bf5d67e18ff4ed2bfe34c3a4",
+    "6301_cont.fits": "04379cf38d0a74bcdb03e99eecd221ffa4713e6e37467ae16a69aca8cda64621",
+    "6173_cont.fits": "ad2305522f2a2c6032fb34bfc46dd5426c0e9836b73df23db0d2dbe272d28b66",
+}
+
+
+def _neckel_labs_table():
+    """Neckel & Labs (1994) coefficients A0..A5 from ISPy's data file (cached)."""
+    global _NL_CACHE
+    if _NL_CACHE is None:
+        try:
+            import ISPy.spec.calib as _ispy_calib
+        except ImportError as e:  # pragma: no cover - optional dep
+            raise ImportError("limb_darkening requires ISPy (`pip install 'enchase[atlas]'`).") from e
+        import os
+        import astropy.io.fits as fits
+
+        path = os.path.join(os.path.dirname(_ispy_calib.__file__), "..", "data",
+                            "limbdarkening_Neckel_Labs_1994.fits")
+        t = fits.getdata(path)
+        wt = np.asarray(t["wavelength"], dtype=float) * 10.0        # nm -> Å
+        A = np.array([np.asarray(t[f"A{i}"], dtype=float) for i in range(6)])
+        o = np.argsort(wt)
+        _NL_CACHE = (wt[o], A[:, o])
+    return _NL_CACHE
+
+
+_NL_CACHE = None
+
+
+def limb_darkening(wavelengths, mu) -> np.ndarray:
+    """Continuum limb darkening I(μ)/I(1) of Neckel & Labs (1994, Sol. Phys. 153, 91).
+
+    Uses the fifth-order polynomial coefficients shipped with ISPy
+    (``ISPy.spec.calib.limbdarkening``), interpolated in wavelength.
+
+    Parameters
+    ----------
+    wavelengths : float or ndarray (nw,)
+        Wavelengths in Å.
+    mu : float or ndarray (nmu,)
+        Cosine of the heliocentric angle.
+
+    Returns
+    -------
+    ndarray (nmu, nw), or (nw,) for a scalar ``mu``.
+    """
+    wt, A = _neckel_labs_table()
+    w = np.atleast_1d(np.asarray(wavelengths, dtype=float))
+    m = np.asarray(mu, dtype=float)
+    coef = np.array([np.interp(w, wt, a) for a in A])            # (6, nw)
+    pw = np.atleast_1d(m)[:, None] ** np.arange(6)[None, :]      # (nmu, 6)
+    out = pw @ coef
+    return out[0] if m.ndim == 0 else out
+
+
+def download_clv_table(name: str = "6563_clv.fits", dest_dir: str = ".", verify: bool = True) -> str:
+    """Download a Pietrow et al. (2023) CLV table from CDS and check its SHA-256.
+
+    Parameters
+    ----------
+    name : str, optional
+        File name in ``J/A+A/671/A130/fits`` (default ``"6563_clv.fits"``, Hα).
+    dest_dir : str, optional
+        Where to save it. An existing file is checked, not downloaded again.
+    verify : bool, optional
+        Compare the SHA-256 with :data:`CLV_SHA256` (raises on mismatch).
+
+    Returns
+    -------
+    str
+        Local path.
+    """
+    import hashlib
+    import os
+    import urllib.request
+
+    dest_dir = os.path.expanduser(dest_dir)
+    os.makedirs(dest_dir, exist_ok=True)
+    path = os.path.join(dest_dir, name)
+    if not os.path.exists(path):
+        req = urllib.request.Request(CLV_CDS_URL + name, headers={"User-Agent": "enchase"})
+        with urllib.request.urlopen(req, timeout=120) as r, open(path + ".part", "wb") as f:
+            f.write(r.read())
+        os.replace(path + ".part", path)
+    if verify and name in CLV_SHA256:
+        h = hashlib.sha256(open(path, "rb").read()).hexdigest()
+        if h != CLV_SHA256[name]:
+            raise ValueError(f"{path}: SHA-256 {h} does not match the CDS file ({CLV_SHA256[name]})")
+    return path
+
+
+def load_clv_table(path: str, smooth: bool = True) -> dict:
+    """Read a Pietrow et al. (2023) ``*_clv.fits`` table.
+
+    Parameters
+    ----------
+    path : str
+        File from :func:`download_clv_table`.
+    smooth : bool, optional
+        Use the ``INT_SMOOTH`` extension (default) rather than ``INT``. In
+        ``INT`` the line-core ratio scatters by a few percent from one μ step
+        to the next (e.g. 1.04 at μ = 0.90 for Hα), which the smoothed
+        profiles do not show.
+
+    Returns
+    -------
+    dict
+        ``wav`` (nw,), ``mu`` (nmu, increasing) and ``ratio`` (nmu, nw), the
+        intensity divided by the μ=1 profile at the same wavelength.
+    """
+    import astropy.io.fits as fits
+
+    with fits.open(path) as h:
+        wav = np.asarray(h["WAV"].data, dtype=float)
+        mu = np.asarray(h["MU"].data, dtype=float)
+        I = np.asarray(h["INT_SMOOTH" if smooth else "INT"].data, dtype=float)
+    if I.shape == (len(wav), len(mu)):
+        I = I.T                                  # -> (nmu, nw)
+    if I.shape != (len(mu), len(wav)):
+        raise ValueError(f"{path}: INT has shape {I.shape}, expected ({len(mu)}, {len(wav)})")
+    o = np.argsort(mu)
+    mu, I = mu[o], I[o]
+    i1 = int(np.argmin(np.abs(mu - 1.0)))
+    if abs(mu[i1] - 1.0) > 1e-6:
+        raise ValueError(f"{path}: no mu=1 profile to normalise by")
+    return {"wav": wav, "mu": mu, "ratio": I / I[i1], "source": str(path)}
+
+
+def clv_factor(wavelengths, mu, table: Optional[dict] = None, wavelength_shift: float = 0.0) -> np.ndarray:
+    """Centre-to-limb factor I(λ, μ)/I(λ, 1) for the quiet Sun.
+
+    Outside the wavelength range of ``table`` (or for ``table=None``) the
+    continuum limb darkening of :func:`limb_darkening` is used. Inside it the
+    observed line CLV is interpolated linearly in λ and μ. ``μ`` below the
+    table's lowest value (0.02 for Pietrow et al. 2023) is clipped to it.
+
+    Parameters
+    ----------
+    wavelengths : ndarray (nw,)
+        Wavelengths in Å.
+    mu : float or ndarray (nmu,)
+    table : dict or None, optional
+        From :func:`load_clv_table`.
+    wavelength_shift : float, optional
+        Added to the table wavelengths (Å) to put them on the frame of
+        ``wavelengths``.
+
+    Returns
+    -------
+    ndarray (nmu, nw), or (nw,) for a scalar ``mu``.
+    """
+    w = np.atleast_1d(np.asarray(wavelengths, dtype=float))
+    m = np.asarray(mu, dtype=float)
+    ma = np.clip(np.atleast_1d(m), 0.0, 1.0)
+    out = limb_darkening(w, ma)
+    if table is not None:
+        tw = table["wav"] + wavelength_shift
+        tm, R = table["mu"], table["ratio"]
+        inside = (w >= tw[0]) & (w <= tw[-1])
+        if inside.any():
+            mc = np.clip(ma, tm[0], tm[-1])
+            j = np.clip(np.searchsorted(tm, mc) - 1, 0, len(tm) - 2)
+            f = ((mc - tm[j]) / (tm[j + 1] - tm[j]))[:, None]
+            Rm = (1 - f) * R[j] + f * R[j + 1]                      # (nmu, ntw)
+            out[:, inside] = np.array([np.interp(w[inside], tw, r) for r in Rm])
+    return out[0] if m.ndim == 0 else out
+
+
+def _mean_clv(wave, mu_pix, table, nbin: int = 200):
+    """Mean CLV factor over many pixels (binned in μ for speed)."""
+    mu_pix = np.asarray(mu_pix, dtype=float).ravel()
+    mu_pix = mu_pix[np.isfinite(mu_pix)]
+    if mu_pix.size == 0:
+        raise ValueError("mu has no finite values")
+    if mu_pix.size <= nbin:
+        return clv_factor(wave, mu_pix, table).mean(axis=0)
+    edges = np.linspace(mu_pix.min(), mu_pix.max() + 1e-9, nbin + 1)
+    cnt, _ = np.histogram(mu_pix, edges)
+    cen = 0.5 * (edges[1:] + edges[:-1])
+    ok = cnt > 0
+    return (clv_factor(wave, cen[ok], table) * cnt[ok, None]).sum(0) / cnt.sum()
+
+
+def clv_reference(wavelengths, mu=1.0, table: Optional[dict] = None, woff: float = 0.0) -> np.ndarray:
+    """Quiet-Sun reference profile at μ: FTS atlas × :func:`clv_factor`.
+
+    Parameters
+    ----------
+    wavelengths : ndarray (nw,)
+        Observed wavelength grid (Å).
+    mu : float or ndarray
+        μ of the pixel(s); an array is averaged as in :func:`atlas_calibrate`.
+    table : dict or None, optional
+        Line CLV table (:func:`load_clv_table`).
+    woff : float, optional
+        Wavelength offset from :func:`atlas_calibrate`.
+
+    Returns
+    -------
+    ndarray (nw,)
+        Radiance in erg s⁻¹ cm⁻² sr⁻¹ Hz⁻¹ on ``wavelengths``. Divide a
+        calibrated profile by it for a contrast relative to the quiet Sun at
+        the same μ.
+    """
+    from ISPy.spec import atlas as isp_atlas
+
+    w = np.asarray(wavelengths, dtype=float)
+    wf, sf, _ = isp_atlas.atlas().get(w[0] - 0.5, w[-1] + 0.5, cgs=True, perHz=True)
+    m = np.asarray(mu, dtype=float)
+    sf = sf * (clv_factor(wf, float(m), table) if m.ndim == 0 else _mean_clv(wf, m, table))
+    return np.interp(w, wf - woff, sf)
+
+
+def mu_map(shape, center, radius) -> np.ndarray:
+    """μ = cos θ for every pixel of a full-disc frame.
+
+    Parameters
+    ----------
+    shape : (H, W)
+    center : (cx, cy)
+        Disc centre in px (e.g. from :func:`chase.calib.spatial.fit_limb`).
+    radius : float or (a, b, angle_deg)
+        Disc radius in px, or the ellipse of :func:`fit_limb`; with an
+        ellipse the radius is measured in the normalised ellipse frame.
+
+    Returns
+    -------
+    ndarray (H, W)
+        μ on the disc, NaN off the disc.
+    """
+    yy, xx = np.mgrid[0:shape[0], 0:shape[1]].astype(float)
+    dx, dy = xx - center[0], yy - center[1]
+    if np.ndim(radius) == 0:
+        rho = np.hypot(dx, dy) / float(radius)
+    else:
+        a, b, ang = radius
+        c, s = np.cos(np.radians(ang)), np.sin(np.radians(ang))
+        rho = np.hypot((c * dx + s * dy) / a, (-s * dx + c * dy) / b)
+    with np.errstate(invalid="ignore"):
+        return np.where(rho < 1, np.sqrt(np.clip(1 - rho ** 2, 0, 1)), np.nan)
+
 
 
 def planck_inversion(I_nu, wavelength_ang: float = 6569.0):

@@ -8,6 +8,11 @@ Two disk-centring strategies are provided:
   when flares or limb darkening skew the intensity distribution.
 * :func:`find_disk_center` — the original brightness-centroid fallback (no
   ``scikit-image`` circle search required).
+* :func:`fit_limb` / :func:`limb_disk_center` — sub-pixel least-squares fit
+  of a circle or a rotated ellipse to limb points found on radial rays
+  (:func:`limb_points`). Use ``model="ellipse"`` when the Level-1 limb is not
+  round (e.g. a scan-axis scale error); :func:`limb_shifts` turns the fitted
+  centres of a sequence into recentring shifts.
 
 :func:`track_and_crop` implements the **shift-then-crop** rule that is critical
 to the flare pipeline: load a padded region, estimate the integer shift on a
@@ -26,7 +31,11 @@ __all__ = [
     "derotate",
     "derotate_crop",
     "find_disk_center",
+    "fit_limb",
     "hough_disk_center",
+    "limb_disk_center",
+    "limb_points",
+    "limb_shifts",
     "phase_shift",
     "recenter",
     "track_and_crop",
@@ -189,6 +198,250 @@ def hough_disk_center(
     if len(cx) == 0:
         raise ValueError("No circle detected on the limb edge map.")
     return float(cx[0]), float(cy[0]), float(rad[0])
+
+
+
+# ---------------------------------------------------------------------------
+# Sub-pixel limb fit (circle or rotated ellipse)
+# ---------------------------------------------------------------------------
+def limb_points(
+    image: np.ndarray,
+    center: Optional[Sequence[float]] = None,
+    radius: Optional[float] = None,
+    nang: int = 720,
+    half_width: Optional[float] = None,
+    smooth: float = 1.0,
+) -> np.ndarray:
+    """Sub-pixel limb points on radial rays.
+
+    On each of ``nang`` rays from ``center`` the limb is the steepest intensity
+    drop (minimum of the radial derivative) within ``radius ± half_width``,
+    refined with a 3-point parabola. Rays that leave the image are skipped.
+
+    Parameters
+    ----------
+    image : ndarray (H, W)
+        Full-disc image of a continuum or far-wing channel.
+    center, radius : optional
+        Start point ``(cx, cy)`` and radius guess. ``None`` → brightness
+        centroid and the radius of a disc with the same area (pixels above
+        20 % of the 99th percentile).
+    nang : int, optional
+        Number of rays (default 720, every 0.5°).
+    half_width : float or None, optional
+        Search band half-width in px (default 3 % of the radius, at least 10).
+    smooth : float, optional
+        Gaussian smoothing (px) before differentiating (default 1).
+
+    Returns
+    -------
+    ndarray (n, 2)
+        ``(x, y)`` of the limb points, in pixels.
+    """
+    from scipy.ndimage import gaussian_filter, map_coordinates
+
+    im = np.asarray(image, dtype=np.float64)
+    im = np.where(np.isfinite(im), im, 0.0)
+    H, W = im.shape
+    if center is None or radius is None:
+        disc = im > 0.2 * np.percentile(im, 99)
+        ys, xs = np.nonzero(disc)
+        if len(xs) == 0:
+            raise ValueError("No disk detected.")
+        if center is None:
+            center = (xs.mean(), ys.mean())
+        if radius is None:
+            radius = np.sqrt(disc.sum() / np.pi)
+    cx, cy = float(center[0]), float(center[1])
+    hw = max(10.0, 0.03 * radius) if half_width is None else float(half_width)
+    if smooth:
+        im = gaussian_filter(im, smooth)
+    step = 0.25
+    rr = np.arange(radius - hw, radius + hw, step)
+    th = np.linspace(0, 2 * np.pi, nang, endpoint=False)
+    X = cx + np.outer(np.cos(th), rr)
+    Y = cy + np.outer(np.sin(th), rr)
+    inside = ((X >= 0) & (X <= W - 1) & (Y >= 0) & (Y <= H - 1)).all(axis=1)
+    prof = map_coordinates(im, [Y.ravel(), X.ravel()], order=1,
+                           mode="nearest").reshape(X.shape)
+    g = np.gradient(prof, axis=1)
+    pts = []
+    for k in np.nonzero(inside)[0]:
+        j = int(np.argmin(g[k]))
+        if 1 <= j < len(rr) - 1:
+            a, b, c = g[k, j - 1], g[k, j], g[k, j + 1]
+            den = a - 2 * b + c
+            d = 0.5 * (a - c) / den if den != 0 else 0.0
+            r = rr[j] + np.clip(d, -1, 1) * step
+            pts.append((cx + r * np.cos(th[k]), cy + r * np.sin(th[k])))
+    return np.asarray(pts, dtype=float).reshape(-1, 2)
+
+
+def _ellipse_residual(q, P):
+    """Normalised radial residual of points P to ellipse q (cx, cy, a, b, phi), px."""
+    cx, cy, a, b, phi = q
+    c, s = np.cos(phi), np.sin(phi)
+    dx, dy = P[:, 0] - cx, P[:, 1] - cy
+    u = c * dx + s * dy
+    v = -s * dx + c * dy
+    return (np.hypot(u / a, v / b) - 1.0) * np.sqrt(abs(a * b))
+
+
+def fit_limb(
+    image: np.ndarray,
+    model: str = "circle",
+    center: Optional[Sequence[float]] = None,
+    radius: Optional[float] = None,
+    nang: int = 720,
+    clip: float = 3.0,
+    niter: int = 5,
+    points: Optional[np.ndarray] = None,
+) -> dict:
+    """Least-squares limb fit: circle or rotated ellipse.
+
+    Limb points come from :func:`limb_points` (or ``points``). A circle is
+    fitted first, with ``niter`` rounds of ``clip``-σ (MAD) rejection that
+    drop rays crossing prominences, flare ribbons or detector edges. With
+    ``model="ellipse"`` the kept points are then fitted with a general
+    ellipse (centre, two semi-axes and the angle of the first axis).
+
+    The ellipse centre is the right disc centre when the Level-1 image is
+    stretched along one axis (a scan-axis plate-scale error): a circle or a
+    Hough fit to such a limb has a centre that depends on which part of the
+    limb dominates the vote.
+
+    Parameters
+    ----------
+    image : ndarray (H, W)
+        Full-disc image of a continuum or far-wing channel.
+    model : {"circle", "ellipse"}
+    center, radius, nang : optional
+        Passed to :func:`limb_points`.
+    clip, niter : optional
+        Outlier rejection (robust σ, rounds).
+    points : ndarray (n, 2), optional
+        Use these limb points instead of detecting them.
+
+    Returns
+    -------
+    dict
+        ``cx``, ``cy`` (centre, px), ``a``, ``b`` (semi-axes, px; equal for a
+        circle), ``angle_deg`` (angle of the ``a`` axis from +x),
+        ``radius_px`` (√(ab)), ``rms_px`` (residual of the kept points),
+        ``n_pts``, ``n_kept`` and ``model``.
+
+    Raises
+    ------
+    ValueError
+        For an unknown model or fewer than 10 limb points.
+    """
+    from scipy.optimize import least_squares
+
+    if model not in ("circle", "ellipse"):
+        raise ValueError(f"model must be 'circle' or 'ellipse', got {model!r}")
+    P = limb_points(image, center, radius, nang=nang) if points is None else np.asarray(points, float)
+    if len(P) < 10:
+        raise ValueError(f"fit_limb: only {len(P)} limb points found")
+    # algebraic circle start (Kasa), then geometric fit with clipping
+    A = np.c_[P[:, 0], P[:, 1], np.ones(len(P))]
+    sol, *_ = np.linalg.lstsq(A, (P ** 2).sum(1), rcond=None)
+    p = np.array([sol[0] / 2, sol[1] / 2, 0.0])
+    p[2] = np.sqrt(max(sol[2] + p[0] ** 2 + p[1] ** 2, 1.0))
+    keep = np.ones(len(P), bool)
+    for _ in range(niter):
+        fc = lambda q: np.hypot(P[keep, 0] - q[0], P[keep, 1] - q[1]) - q[2]
+        p = least_squares(fc, p).x
+        res = np.hypot(P[:, 0] - p[0], P[:, 1] - p[1]) - p[2]
+        s = 1.4826 * np.median(np.abs(res[keep] - np.median(res[keep])))
+        nk = np.abs(res - np.median(res[keep])) < clip * max(s, 0.05)
+        if nk.sum() < 10 or (nk == keep).all():
+            break
+        keep = nk
+    out = {"cx": float(p[0]), "cy": float(p[1]), "a": float(p[2]), "b": float(p[2]),
+           "angle_deg": 0.0, "radius_px": float(p[2]),
+           "rms_px": float(np.sqrt(np.mean(res[keep] ** 2))),
+           "n_pts": int(len(P)), "n_kept": int(keep.sum()), "model": model}
+    if model == "circle":
+        return out
+    q0 = np.array([p[0], p[1], p[2] * 1.001, p[2] / 1.001, 0.0])
+    for _ in range(niter):
+        q = least_squares(_ellipse_residual, q0, args=(P[keep],)).x
+        res = _ellipse_residual(q, P)
+        s = 1.4826 * np.median(np.abs(res[keep] - np.median(res[keep])))
+        nk = np.abs(res - np.median(res[keep])) < clip * max(s, 0.05)
+        q0 = q
+        if nk.sum() < 10 or (nk == keep).all():
+            break
+        keep = nk
+    cx, cy, a, b, phi = q0
+    a, b = abs(a), abs(b)
+    if b > a:                       # report a as the major axis
+        a, b, phi = b, a, phi + np.pi / 2
+    ang = (np.degrees(phi) + 90.0) % 180.0 - 90.0
+    res = _ellipse_residual(q0, P)
+    out.update(cx=float(cx), cy=float(cy), a=float(a), b=float(b), angle_deg=float(ang),
+               radius_px=float(np.sqrt(a * b)),
+               rms_px=float(np.sqrt(np.mean(res[keep] ** 2))), n_kept=int(keep.sum()))
+    return out
+
+
+def limb_disk_center(image: np.ndarray, model: str = "ellipse", **kwargs) -> Tuple[float, float, float]:
+    """Sub-pixel disc centre from :func:`fit_limb`.
+
+    A faster, sub-pixel alternative to :func:`hough_disk_center` (about 1 s
+    instead of 1-2 min for a 2300×2300 px CHASE frame).
+
+    Returns
+    -------
+    (cx, cy, radius) : float, float, float
+        ``radius`` is √(ab) for an ellipse.
+    """
+    f = fit_limb(image, model=model, **kwargs)
+    return f["cx"], f["cy"], f["radius_px"]
+
+
+def limb_shifts(
+    images: Sequence[np.ndarray],
+    model: str = "ellipse",
+    ref_idx: int = 0,
+    integer: bool = True,
+    return_fits: bool = False,
+    **kwargs,
+):
+    """Recentring shifts from a limb fit on every scan.
+
+    Parameters
+    ----------
+    images : sequence of ndarray (H, W)
+        Full-disc continuum or far-wing image of each scan.
+    model : {"circle", "ellipse"}
+        Passed to :func:`fit_limb` (default ``"ellipse"``).
+    ref_idx : int, optional
+        Scan whose centre is the reference (shift 0).
+    integer : bool, optional
+        Round to whole pixels (for :func:`recenter` or an integer crop).
+    return_fits : bool, optional
+        Also return the list of :func:`fit_limb` dicts.
+
+    Returns
+    -------
+    shifts : ndarray (n, 2)
+        ``(dx, dy)`` that moves each scan's disc centre onto the reference
+        centre, i.e. ``recenter(cube_i, shifts[i])`` registers scan ``i``.
+        A crop window defined on the reference scan at ``(x, y)`` sits at
+        ``(x - dx, y - dy)`` in scan ``i``.
+    """
+    fits_ = []
+    guess = {}
+    for im in images:
+        f = fit_limb(im, model=model, **{**guess, **kwargs})
+        fits_.append(f)
+        guess = {"center": (f["cx"], f["cy"]), "radius": f["radius_px"]}
+    c = np.array([[f["cx"], f["cy"]] for f in fits_])
+    sh = c[ref_idx] - c
+    if integer:
+        sh = np.round(sh).astype(int)
+    return (sh, fits_) if return_fits else sh
 
 
 def recenter(cube: np.ndarray, shift_xy: Tuple[int, int]) -> np.ndarray:

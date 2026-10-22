@@ -24,7 +24,7 @@ from __future__ import annotations
 
 from . import _compat  # noqa: F401  (lzma stub + headless matplotlib)
 
-__version__ = "2.1.1"
+__version__ = "2.2.0"
 
 # --- I/O -------------------------------------------------------------------
 from .io import (
@@ -56,7 +56,16 @@ from .calib import (
     wing_channels,
     create_optical_flow_solver,
     find_disk_center,
+    fit_limb,
     hough_disk_center,
+    limb_disk_center,
+    limb_shifts,
+    clv_factor,
+    clv_reference,
+    download_clv_table,
+    limb_darkening,
+    load_clv_table,
+    mu_map,
     integral_scaling,
     normalize_intensity,
     optical_flow_align,
@@ -116,6 +125,7 @@ __all__ = [
     # calib
     "derotate", "derotate_crop",
     "find_disk_center", "hough_disk_center", "recenter", "phase_shift",
+    "fit_limb", "limb_disk_center", "limb_shifts",
     "track_and_crop", "optical_flow_align", "warp_cube",
     "select_flow_reference", "flare_mask", "header_disc_center", "header_shifts",
     "rotation_shift", "track_shifts", "tie_to_header",
@@ -123,7 +133,8 @@ __all__ = [
     "align_spectrum", "normalize_intensity", "integral_scaling",
     "atlas_calibrate", "atlas_fit_quality", "quiet_sun_mask", "find_quiet_patch",
     "activity_mask", "wing_channels", "atlas_sensitivity", "atlas_factor_series",
-    "planck_inversion",
+    "planck_inversion", "limb_darkening", "clv_factor", "clv_reference",
+    "download_clv_table", "load_clv_table", "mu_map",
     # analysis
     "contrast_profile", "halpha_width_map", "halpha_width_temperature",
     "width_to_temperature", "fe_planck_temperature", "fe_eb_temperature",

@@ -95,6 +95,62 @@ Every stage has a switch. Mix freely:
 
 `--no-resample --no-drift` together = completely untouched wavelength axis.
 
+## Alignment options (new in 2.2)
+
+The defaults are the same as in 2.1: the patch is tracked by cross-correlation against scan 0, and the optical flow runs on the last Fe I wavelength (or the last Hα wavelength when there are no Fe I files). The options below are off unless you ask for them.
+
+| Option (Config / TOML) | CLI flag | Values | What it does |
+|---|---|---|---|
+| `align_mode` | `--align-mode` | `xcorr` (default), `header`, `header+xcorr` | `header` takes each scan's crop shift from the disc-centre drift in the headers (`CRPIX1`/`CRPIX2`) plus the differential rotation of the patch (Snodgrass & Ulrich 1990), with no image correlation. `header+xcorr` adds a correlation residual on top (rejected above `max_residual`, 3 px). |
+| `disc_center` | `--disc-center` | `crpix` (default), `limb`, `auto` | Disc-centre source for the header modes. `limb` uses sub-pixel limb fits. `auto` checks the header against limb fits of three scans and warns when the header is unreliable. |
+| `rotation` | `--no-rotation` | `True` (default) | Differential rotation in the header modes. |
+| `subpixel` | `--subpixel` | `False` (default) | Apply the fractional part of the crop shift with a cubic spline instead of rounding. |
+| `reference` | `--reference` | `first` (default), `previous`, `running` | Correlation reference: scan 0, the previous scan, or the mean of the last `reference_window` (default 3) aligned scans. |
+| `drift_control` | `--drift-control` | `none` (default), `header` | Ties chained correlation steps back to the header pointing by least squares, so they do not random-walk. |
+| `shift_method` | `--shift-method` | `phase` (default), `windowed` | Correlation estimator. `windowed` is the Hann-windowed correlation used by `chase.analysis.residual_pointing`. |
+| `flow_reference` | `--flow-reference` | `default`, `stable`, `masked`, `stable+masked` | Image the optical flow is computed on. `stable` picks the far-wing channel(s) (`flow_channels`, default 1) that change least; `masked` ignores pixels that change by more than `flare_threshold` (default 0.1). |
+
+`load_flare_sequence` also takes `max_residual`, `header_sigma` and `step_sigma` (SDK only).
+
+```bash
+# Hα-only quiet Sun, filaments, near-limb or off-limb fields
+chase ./data --patch 1520 1720 1600 1800 --align-mode header --subpixel --no-optical-flow
+
+# long series (> 15 min) where image structure changes
+chase ./data --patch ... --reference running --drift-control header
+
+# flare ROI
+chase ./data --patch ... --align-mode header+xcorr --flow-reference stable
+```
+
+What we measured (Solar Physics referee revision, real CHASE data; tracking error against per-scan limb-fit pointing):
+
+- **Hα-only fields** (quiet Sun, filaments, near-limb and off-limb boxes in three data sets): `header` gives 0.2-0.5″ rms, against 1.6-13″ for the 2.1 continuum fallback (up to 19″ over a 115-min series). The scan-to-scan Hα core rms drops from 2.8-10.8 % to 2.6-3.5 %.
+- **After 15 min** the 2.1 tracking reaches 3.3-22″ rms, also with Fe I. `header`, and `reference="running"` with `drift_control="header"`, stay at 0.3-0.6″. Without the header tie a chained reference drifts by 0.7-5.2″.
+- **X9.0 flare:** `flow_reference="stable"` lowers the peak residual after flow from 1.10 px (1.15″) to 0.92 px (0.96″). About 1 px remains at the flare peak with every option. `masked` is worse at the peak (2.2 px), so do not use it there. On the flare ROI plain `header` (1.64″) is worse than correlation (1.24″) before flow; `header+xcorr` is best (0.95″).
+
+When not to use them:
+
+- **Turn optical flow off for on-disc Hα-only fields after header recentring.** The flow is computed against scan 0 and raises the core rms from 2.6-3.5 % to 4.1-5.7 %.
+- **Do not use the header modes on the 2023-03-29 Level-1 data** (X1.2). Its `CRPIX` is 30-42 px off the limb, and odd and even scans have field-dependent offsets of 8-11 px that no disc centre follows. Use the default Fe I correlation there (0.42″ tracked, 0.06″ after flow). `disc_center="auto"` warns in this case.
+- Sit-and-stare data are not supported: the public archive has none to test on.
+
+## Limb fit and centre-to-limb calibration (new in 2.2)
+
+```python
+from chase.calib import fit_limb, limb_disk_center, limb_shifts, mu_map
+from chase.calib import atlas_calibrate, download_clv_table, load_clv_table
+
+cx, cy, r = limb_disk_center(full_disc_image)                 # sub-pixel, about 1 s per frame
+shifts = limb_shifts(full_disc_images, model="ellipse")       # per-scan recentring
+table = load_clv_table(download_clv_table(dest_dir="."))      # Pietrow et al. 2023 Hα CLV (CDS)
+mu = mu_map(full_disc_image.shape, (cx, cy), r)
+ifact, woff = atlas_calibrate(wav, box_cube, mu=mu[y0:y1, x0:x1], clv_table=table)  # near-limb box -> disc-centre factor
+```
+
+- `fit_limb` (circle or rotated ellipse) takes 0.6-2 s per frame against 70-120 s for `hough_disk_center`. Residual full-disc pointing: 2.7″ (X1.2) and 0.6″ (M3.2), against 5.0″ and 1.0″ with Hough. What is left on X1.2 is a distortion of every second raster in the 2023 Level-1 data, which recentring the whole disc cannot remove.
+- `atlas_calibrate(..., mu=, clv_table=)` corrects the quiet-Sun centre-to-limb variation (Neckel & Labs 1994 continuum plus the Pietrow et al. 2023 Hα table). On a near-limb box the calibration error drops from 12-73 % to 3-10 %. The table covers ±2 Å only; further out the correction is 4-19 % off. Stray light is not corrected. The default `mu=1.0` keeps the 2.1 behaviour.
+
 ## The same thing in Python
 
 ```python
