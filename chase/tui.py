@@ -30,7 +30,7 @@ def run() -> int:
     if not _textual_available():
         print(
             "The TUI needs Textual.  Install it with:\n"
-            "    pip install 'chase-pipeline[tui]'   (or: pip install textual)\n\n"
+            "    pip install 'enchase[tui]'   (or: pip install textual)\n\n"
             "Meanwhile you can use the CLI or a config file:\n"
             "    chase /path/to/fits --patch 940 1080 1870 2040 --contrast\n"
             "    chase --config examples/config.toml"

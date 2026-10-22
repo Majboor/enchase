@@ -3,6 +3,38 @@
 All notable changes to this project are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.1.0] — 2026-10-22 (renamed to `enchase`)
+
+Changes made for the Solar Physics referee report on the enCHASE paper.
+
+### Added
+- **`chase.analysis.validation`** — numbers for every calibration step:
+  `residual_pointing` (global cross-correlation and local dense-flow residual,
+  px and arcsec), `line_centroid` / `residual_wavelength` (scan-to-scan Fe I
+  core scatter in mÅ and km/s), `frame_rms` (scan-to-scan RMS in % and in
+  erg s⁻¹ cm⁻² sr⁻¹ Hz⁻¹), `stray_light_estimate` (off-limb continuum upper
+  limit on scattered light).
+- **Active-region-safe atlas calibration** — `atlas_calibrate(mask_active=True)`
+  averages only quiet pixels (`quiet_sun_mask`: continuum within 5 %, line core
+  within 10 % of the patch median), or takes an explicit `mask`;
+  `find_quiet_patch` picks the quietest box near disc centre;
+  `extract_disk_center(center=...)` extracts it.
+- `atlas_calibrate(return_quality=True)` returns the fit RMS (% of continuum)
+  and reduced χ² via `atlas_fit_quality`.
+- `import enchase` — alias of the `chase` package.
+
+### Changed
+- **Distribution renamed `chasepy` → `enchase`**, repository
+  `Majboor/chase-pipeline` → `Majboor/enchase` (old URLs redirect). `chasepy`
+  stays on PyPI as an empty shim that installs `enchase`.
+- Default `flow_method` is now `"farneback"`, matching the paper; TV-L1 is
+  still available.
+- `atlas_calibrate` is deterministic (seeded optimiser, `seed=0`). The docstring
+  now states that `wing_continuum_frac` selects wavelength channels (weighted
+  20× in ISPy's fit), not pixels.
+- `main` now carries all feature branches (derotation, robust tracking, portal
+  client, resume, citation metadata).
+
 ## [2.0.1] — 2026-08-02
 
 ### Changed

@@ -91,6 +91,7 @@ def load_fits_data(filepath: str) -> np.ndarray:
 def extract_disk_center(
     filepath: str,
     size: int = 100,
+    center: Optional[Tuple[int, int]] = None,
 ) -> Tuple[np.ndarray, np.ndarray, Tuple[int, int]]:
     """Extract the disk-center patch used for absolute calibration.
 
@@ -104,6 +105,9 @@ def extract_disk_center(
         FITS cube (typically the Fe I file).
     size : int, optional
         Patch side length in pixels (default 100).
+    center : (cy, cx) or None, optional
+        Patch centre in pixels. ``None`` → the header reference pixel. Pass the
+        result of :func:`chase.calib.find_quiet_patch` to avoid active regions.
 
     Returns
     -------
@@ -118,8 +122,11 @@ def extract_disk_center(
         header = hdu.header
         wav = wavelength_grid(header)
         H, W = int(header["NAXIS2"]), int(header["NAXIS1"])
-        cx = int(round(header.get("CRPIX1", W / 2)))
-        cy = int(round(header.get("CRPIX2", H / 2)))
+        if center is None:
+            cx = int(round(header.get("CRPIX1", W / 2)))
+            cy = int(round(header.get("CRPIX2", H / 2)))
+        else:
+            cy, cx = int(center[0]), int(center[1])
         half = size // 2
         y0, y1 = max(0, cy - half), min(H, cy + half)
         x0, x1 = max(0, cx - half), min(W, cx + half)
@@ -174,16 +181,16 @@ def save_aligned_fits(out_dir, seq, ha_al, plate_scale=1.04, prefix="aligned"):
         hdr["INSTROT"] = (float(seq.get("inst_rot", 0.0)),
                           "solar north vs detector y-axis [deg]")
         hdr["DEROT"] = (bool(seq.get("derotated", False)),
-                        "frames rotated to solar north by chasepy")
+                        "frames rotated to solar north by enchase")
         hdr["CRVAL3"] = float(wav[0])
         hdr["PATCHY0"], hdr["PATCHX0"] = y0, x0
         hdr["TRKSH_Y"] = (int(shifts[i][0]), "tracking shift applied [px]")
         hdr["TRKSH_X"] = (int(shifts[i][1]), "tracking shift applied [px]")
-        hdr["HISTORY"] = "chasepy: shift-then-crop tracking (robust per-parity shifts)"
+        hdr["HISTORY"] = "enchase: shift-then-crop tracking (robust per-parity shifts)"
         if seq.get("derotated"):
-            hdr["HISTORY"] = "chasepy: derotated to solar north (INST_ROT from header)"
-        hdr["HISTORY"] = "chasepy: wavelength resampled onto scan-0 grid (cubic)"
-        hdr["HISTORY"] = "chasepy: optical-flow stabilised (flare-free reference)"
+            hdr["HISTORY"] = "enchase: derotated to solar north (INST_ROT from header)"
+        hdr["HISTORY"] = "enchase: wavelength resampled onto scan-0 grid (cubic)"
+        hdr["HISTORY"] = "enchase: optical-flow stabilised (flare-free reference)"
         path = os.path.join(out_dir, f"{prefix}_{i:04d}_HA.fits")
         save_cube_fits(ha_al[i], path, header=hdr)
         paths.append(path)

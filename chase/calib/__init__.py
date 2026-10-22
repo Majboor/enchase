@@ -21,9 +21,12 @@ from .wavelength import (
 )
 from .intensity import (
     atlas_calibrate,
+    atlas_fit_quality,
+    find_quiet_patch,
     integral_scaling,
     normalize_intensity,
     planck_inversion,
+    quiet_sun_mask,
 )
 
 __all__ = [
@@ -46,6 +49,9 @@ __all__ = [
     "resample_wavelength",
     # intensity
     "atlas_calibrate",
+    "atlas_fit_quality",
+    "find_quiet_patch",
+    "quiet_sun_mask",
     "integral_scaling",
     "normalize_intensity",
     "planck_inversion",

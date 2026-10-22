@@ -1,24 +1,24 @@
-# chase-pipeline
+# enchase
 
 Calibration and flare analysis for CHASE/HIS solar spectroscopy. Install one package, point it at data, get aligned cubes, animations, contrast profiles, and temperature maps.
 
-[![tests](https://github.com/Majboor/chase-pipeline/actions/workflows/test.yml/badge.svg)](https://github.com/Majboor/chase-pipeline/actions/workflows/test.yml)
-[![PyPI](https://img.shields.io/pypi/v/chasepy)](https://pypi.org/project/chasepy/)
+[![tests](https://github.com/Majboor/enchase/actions/workflows/test.yml/badge.svg)](https://github.com/Majboor/enchase/actions/workflows/test.yml)
+[![PyPI](https://img.shields.io/pypi/v/enchase)](https://pypi.org/project/enchase/)
 ![python](https://img.shields.io/badge/python-3.9%2B-blue)
 ![license](https://img.shields.io/badge/license-MIT-green)
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/Majboor/chase-pipeline/feat/unified-pipeline-tui-sdk/assets/flare.gif" width="760" alt="Stabilised 2-panel animation of the 2023-03-29 X2.1 flare"><br>
+  <img src="https://raw.githubusercontent.com/Majboor/enchase/main/assets/flare.gif" width="760" alt="Stabilised 2-panel animation of the 2023-03-29 X2.1 flare"><br>
   <em>The 2023-03-29 X2.1 flare, stabilised by this pipeline. Photosphere left, chromosphere right.</em>
 </p>
 
 ## Install
 
 ```bash
-pip install chasepy
+pip install enchase
 ```
 
-That gives you the `chase` module, the `chase` command, and the `chase-tui` interactive app. Extras: `pip install 'chasepy[tui]'` (TUI), `'chasepy[atlas]'` (absolute Fe I calibration), `'chasepy[all]'` (everything).
+That gives you the `chase` module, the `chase` command, and the `chase-tui` interactive app. Extras: `pip install 'enchase[tui]'` (TUI), `'enchase[atlas]'` (absolute Fe I calibration), `'enchase[all]'` (everything).
 
 ## Get data
 
@@ -41,7 +41,7 @@ Read credentials are free for research use: see [docs/S3_DATA.md](docs/S3_DATA.m
 **Option 2: the CHASE portal.** The portal ([ssdc.nju.edu.cn](https://ssdc.nju.edu.cn)) has a captcha, so you log in once in a real browser; after that everything is command line:
 
 ```bash
-pip install chasepy[portal] && playwright install chromium
+pip install enchase[portal] && playwright install chromium
 
 chase-portal login          # opens the portal once; log in, close the window
 chase-portal search --start "2023-03-29 02:00" --end "2023-03-29 03:00"
@@ -131,7 +131,7 @@ chase-tui
 ```
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/Majboor/chase-pipeline/feat/unified-pipeline-tui-sdk/assets/tui_e2e_walkthrough.gif" width="800" alt="End-to-end chase-tui walkthrough">
+  <img src="https://raw.githubusercontent.com/Majboor/enchase/main/assets/tui_e2e_walkthrough.gif" width="800" alt="End-to-end chase-tui walkthrough">
 </p>
 
 Every checkbox is one of the switches above. There is also a one-file config workflow: `chase --config my.toml`, keys mirror the flags ([examples/config.toml](examples/config.toml)).
@@ -152,7 +152,7 @@ CHASE (the Chinese Hα Solar Explorer) scans the full solar disk in Hα (118 wav
 | `chase.analysis.temperature` | Hα width to T (Molnar), Fe I to T (Planck / EB / Voigt) | <img src="assets/double_temp_map_peak.png" width="220"> |
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/Majboor/chase-pipeline/feat/unified-pipeline-tui-sdk/assets/temperature.gif" width="720" alt="Double temperature map animation"><br>
+  <img src="https://raw.githubusercontent.com/Majboor/enchase/main/assets/temperature.gif" width="720" alt="Double temperature map animation"><br>
   <em>Double temperature map: chromosphere from Hα width (~10⁴ K), photosphere from Fe I Planck inversion (~5100 K).</em>
 </p>
 
@@ -168,8 +168,8 @@ CHASE (the Chinese Hα Solar Explorer) scans the full solar disk in Hα (118 wav
 ## Development
 
 ```bash
-git clone https://github.com/Majboor/chase-pipeline.git
-cd chase-pipeline
+git clone https://github.com/Majboor/enchase.git
+cd enchase
 pip install -e '.[all]'
 pytest -q            # 27 tests, synthetic FITS fixtures, no big data needed
 ```

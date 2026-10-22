@@ -24,7 +24,7 @@ The portal has a captcha, so you log in once in a real browser window; the
 session cookie is saved and everything after that is command line:
 
 ```bash
-pip install chasepy[portal] && playwright install chromium
+pip install enchase[portal] && playwright install chromium
 
 chase-portal login    # opens the portal; log in, close the window
 ```

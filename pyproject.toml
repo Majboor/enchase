@@ -3,9 +3,9 @@ requires = ["setuptools>=64", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "chasepy"
-version = "2.0.1"
-description = "Modular CHASE/HIS solar calibration and flare-analysis pipeline (TUI + SDK + CLI)"
+name = "enchase"
+version = "2.1.0"
+description = "enCHASE: calibration and analysis pipeline for CHASE/HIS solar spectroscopy (TUI + SDK + CLI)"
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.9"
@@ -43,11 +43,12 @@ chase-tui = "chase.tui:main"
 chase-portal = "chase.portal:main"
 
 [project.urls]
-Homepage = "https://github.com/Majboor/chase-pipeline"
-Repository = "https://github.com/Majboor/chase-pipeline"
+Homepage = "https://github.com/Majboor/enchase"
+Repository = "https://github.com/Majboor/enchase"
+Changelog = "https://github.com/Majboor/enchase/blob/main/CHANGELOG.md"
 
 [tool.setuptools.packages.find]
-include = ["chase*"]
+include = ["chase*", "enchase*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

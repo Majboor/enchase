@@ -3,15 +3,15 @@
 ## Dev setup
 
 ```bash
-git clone https://github.com/Majboor/chase-pipeline
-cd chase-pipeline
+git clone https://github.com/Majboor/enchase
+cd enchase
 pip install -e '.[all]'      # core + tui + atlas + dev
 pytest -q                    # 27 tests, all on synthetic FITS fixtures
 ```
 
 You do not need the real multi-hundred-MB CHASE cubes to develop or test. `tests/conftest.py` synthesises tiny HA/FE cubes with a known spatial shift and a known CRVAL3 drift, so every physics rule can be asserted against ground truth.
 
-Users install from PyPI instead: `pip install chasepy`. Same code, the distribution name just differs from the repo name.
+Users install from PyPI instead: `pip install enchase`. The import name is `chase` (`import enchase` works too).
 
 ## Project layout
 
@@ -49,7 +49,7 @@ tests/  examples/  docs/  assets/
 
 ## Releasing to PyPI
 
-The package is published as [`chasepy`](https://pypi.org/project/chasepy/). PyPI rejects re-uploads of an existing version, so every release needs a bump.
+The package is published as [`enchase`](https://pypi.org/project/enchase/); the old name [`chasepy`](https://pypi.org/project/chasepy/) is kept as a shim that depends on it. PyPI rejects re-uploads of an existing version, so every release needs a bump.
 
 ```bash
 # 1. bump version in pyproject.toml, update CHANGELOG.md

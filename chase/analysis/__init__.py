@@ -10,6 +10,13 @@ from .temperature import (
     measure_halpha_width,
     width_to_temperature,
 )
+from .validation import (
+    frame_rms,
+    line_centroid,
+    residual_pointing,
+    residual_wavelength,
+    stray_light_estimate,
+)
 
 __all__ = [
     "contrast_profile",
@@ -20,4 +27,9 @@ __all__ = [
     "fe_planck_temperature",
     "fe_eb_temperature",
     "fe_voigt_temperature",
+    "residual_pointing",
+    "line_centroid",
+    "residual_wavelength",
+    "frame_rms",
+    "stray_light_estimate",
 ]

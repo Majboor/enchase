@@ -46,7 +46,9 @@ class Config:
     optical_flow : bool
         Fine optical-flow stabilisation.
     flow_method : str
-        ``"tvl1"`` or ``"farneback"``.
+        ``"farneback"`` (default, as used in the paper) or ``"tvl1"``. TV-L1
+        misregisters the flare peak, where the brightening breaks brightness
+        constancy.
     ref_channel : str
         Alignment reference: ``"fe_last"`` or ``"ha_cont"``.
     contrast : bool
@@ -80,7 +82,7 @@ class Config:
     derotate: bool = False
     resample_wavelength: bool = True
     optical_flow: bool = True
-    flow_method: str = "tvl1"
+    flow_method: str = "farneback"
     ref_channel: str = "fe_last"
 
     contrast: bool = False

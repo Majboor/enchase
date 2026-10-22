@@ -1,4 +1,4 @@
-# Example chase-pipeline config — the "lazy", point-and-run workflow.
+# Example enchase config — the "lazy", point-and-run workflow.
 #   chase --config examples/config.toml
 #
 # Every key mirrors a field of chase.config.Config. Unknown keys are ignored.

@@ -16,7 +16,7 @@ session cookie is saved and every later command runs headless.
 
 Signed URLs expire in ~24h, so mint them right before downloading.
 State lives in ~/.chase_portal/ (chmod 600). Times are UTC.
-The ``login`` step needs playwright (``pip install chasepy[portal]`` then
+The ``login`` step needs playwright (``pip install enchase[portal]`` then
 ``playwright install chromium``); search/urls use plain requests.
 """
 import argparse

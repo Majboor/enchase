@@ -66,7 +66,7 @@ Store the three values as Colab Secrets (key icon in the sidebar), never in cell
 | `CHASE_S3_SECRET_KEY` | your secret key |
 
 ```python
-!pip -q install chasepy boto3
+!pip -q install enchase boto3
 
 from google.colab import userdata
 import boto3

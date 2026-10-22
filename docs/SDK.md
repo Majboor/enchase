@@ -100,7 +100,7 @@ shifts          # array([ 0.  , -0.31, -0.62, ...])  channels
 norm = chase.normalize_intensity(cube, ref_cube)              # quiet-Sun normalisation
 factor = chase.integral_scaling(ref_spec, target_spec)        # satprocess integral match
 
-# Absolute calibration against the FTS atlas (pip install 'chasepy[atlas]')
+# Absolute calibration against the FTS atlas (pip install 'enchase[atlas]')
 dc_cube, dc_wav, _ = chase.extract_disk_center("RSM..._FE.fits")
 ifact, woff = chase.atlas_calibrate(dc_wav, dc_cube)
 ifact           # intensity factor to physical units

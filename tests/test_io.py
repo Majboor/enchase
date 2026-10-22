@@ -104,7 +104,7 @@ def test_loader_derotate_flag(synthetic_dataset):
 
 def test_loader_derotate_rotates_content(tmp_path):
     """A synthetic file with INST_ROT=90 must come back rotated: a dot east of
-    the disc centre lands south of it (the pinned chasepy convention)."""
+    the disc centre lands south of it (the pinned enchase convention)."""
     import astropy.io.fits as fits
     import numpy as np
 
