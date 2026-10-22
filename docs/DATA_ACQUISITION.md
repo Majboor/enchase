@@ -20,15 +20,35 @@ the pipeline corrects for it). Example filename:
 
 ## 2. Download from the SSDC portal
 
-1. Go to the **Solar Science Data Center, Nanjing University**:
-   <https://ssdc.nju.edu.cn/NdchaseSatellite>
-2. Choose **CHASE / HIS**, **RSM** (full-disk) mode, and your date/time window.
-   Note: the archive is typically **1–2 weeks behind** real time.
-3. Select the frames you want (both **HA** and **FE** for each time step) and get
-   their download links.
+The portal has a captcha, so you log in once in a real browser window; the
+session cookie is saved and everything after that is command line:
 
-> The exact event used throughout this repo is the **2023-03-29 X2.1** flare:
-> 25 time steps, ~1–2 min cadence, the eruption peaking around **frame 24**.
+```bash
+pip install chasepy[portal] && playwright install chromium
+
+chase-portal login    # opens the portal; log in, close the window
+```
+
+Then search a UTC window and mint signed download links:
+
+```bash
+chase-portal search --start "2023-03-29 02:00" --end "2023-03-29 03:00"
+# files: 50   HA: 25   FE: 25   total: 16.9 GiB
+
+chase-portal urls --start "2023-03-29 02:00" --end "2023-03-29 03:00" -o links.txt
+```
+
+`--line HA` restricts to one spectral line. Links expire in **~24 h**, so mint
+them right before downloading. When the session expires, run
+`chase-portal login` again.
+
+You can also click through the portal by hand: choose **CHASE / HIS**, **RSM**
+(full-disk) mode and your date/time window, select the frames (both **HA** and
+**FE** for each time step) and copy the download links. Note: the archive is
+typically **1–2 weeks behind** real time.
+
+> The exact event used throughout this repo is the **2023-03-29 X1.2** flare:
+> 25 time steps, ~1–2 min cadence, peaking around **scan 17 (02:32 UT)**.
 
 ## 3. Feed the URLs to the downloader
 

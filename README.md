@@ -38,7 +38,18 @@ s3.download_file("chase-data",
 
 Read credentials are free for research use: see [docs/S3_DATA.md](docs/S3_DATA.md) for the full guide (bucket layout, Colab setup, s3fs) and how to get keys.
 
-**Option 2: the CHASE portal.** Request signed URLs from [ssdc.nju.edu.cn](https://ssdc.nju.edu.cn), then `chase` downloads them for you: pass a `.txt` of URLs, a URL, or a folder of already-downloaded `*.fits`. Walkthrough: [docs/DATA_ACQUISITION.md](docs/DATA_ACQUISITION.md).
+**Option 2: the CHASE portal.** The portal ([ssdc.nju.edu.cn](https://ssdc.nju.edu.cn)) has a captcha, so you log in once in a real browser; after that everything is command line:
+
+```bash
+pip install chasepy[portal] && playwright install chromium
+
+chase-portal login          # opens the portal once; log in, close the window
+chase-portal search --start "2023-03-29 02:00" --end "2023-03-29 03:00"
+chase-portal urls   --start "2023-03-29 02:00" --end "2023-03-29 03:00" -o links.txt
+chase links.txt             # downloads the files and runs the pipeline
+```
+
+`urls` writes one signed link per line (they expire in ~24h, so mint right before downloading). `chase` also accepts a single URL or a folder of already-downloaded `*.fits`. Walkthrough: [docs/DATA_ACQUISITION.md](docs/DATA_ACQUISITION.md).
 
 ## Run it
 

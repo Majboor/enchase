@@ -32,6 +32,7 @@ dependencies = [
 
 [project.optional-dependencies]
 tui = ["textual>=0.40"]
+portal = ["playwright>=1.40"]
 atlas = ["ISPy"]          # FTS-atlas absolute Fe I calibration
 dev = ["pytest>=7.0", "pytest-cov"]
 all = ["textual>=0.40", "ISPy", "pytest>=7.0"]
@@ -39,6 +40,7 @@ all = ["textual>=0.40", "ISPy", "pytest>=7.0"]
 [project.scripts]
 chase = "chase.cli:main"
 chase-tui = "chase.tui:main"
+chase-portal = "chase.portal:main"
 
 [project.urls]
 Homepage = "https://github.com/Majboor/chase-pipeline"
