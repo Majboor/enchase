@@ -77,6 +77,11 @@ sy, sx = chase.phase_shift(ref_img, target_img)          # subpixel xcorr shift
 cropped, shifts = chase.track_and_crop(frames, patch)    # shift-then-crop
 warped = chase.warp_cube(cube, map_x, map_y)             # apply a flow map yourself
 cx, cy, r = chase.hough_disk_center(full_disk_image)     # limb fit (satprocess)
+
+# Sub-pixel least-squares limb fit, ~0.6 s per frame; "ellipse" fits a rotated
+# ellipse for a limb that is not round (e.g. the 2023 Level-1 data)
+f = chase.fit_limb(full_disk_image, model="ellipse")    # cx, cy, a, b, angle_deg, rms_px
+shifts = chase.limb_shifts(full_disk_images)             # (dx, dy) per scan onto scan 0
 ```
 
 ## Wavelength
@@ -105,7 +110,20 @@ dc_cube, dc_wav, _ = chase.extract_disk_center("RSM..._FE.fits")
 ifact, woff = chase.atlas_calibrate(dc_wav, dc_cube)
 ifact           # intensity factor to physical units
 woff            # wavelength offset (Å)
+
+# Calibrating on a box away from disc centre: give its mu (number or per-pixel
+# map). Continuum limb darkening (Neckel & Labs 1994) by default; for Halpha add
+# the line CLV of Pietrow et al. (2023), downloaded once from CDS.
+from chase.calib import download_clv_table, load_clv_table, mu_map, clv_reference
+tab = load_clv_table(download_clv_table("6563_clv.fits", "~/.cache/enchase"))
+mu = mu_map(full_disk_image.shape, (f["cx"], f["cy"]), (f["a"], f["b"], f["angle_deg"]))
+ifact, woff = chase.atlas_calibrate(wav, box_cube, wing_continuum_frac=0.75,
+                                    mu=mu[y0:y1, x0:x1], clv_table=tab)
+ref_mu = clv_reference(wav, mu=0.3, table=tab, woff=woff)  # quiet-Sun profile at mu=0.3
 ```
+The Pietrow table covers 6560.8–6564.8 Å; outside it the continuum limb
+darkening is used, which over-corrects the Hα far wings (they darken less than
+the continuum).
 
 ## Contrast
 

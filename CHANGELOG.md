@@ -3,6 +3,28 @@
 All notable changes to this project are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/).
 
+## [Unreleased]
+
+### Added
+- **Sub-pixel limb fit** (`chase.calib.spatial`): `limb_points`, `fit_limb`
+  (`model="circle"` or `"ellipse"`, a rotated ellipse with centre, two
+  semi-axes and angle, with MAD clipping of rays that cross prominences or
+  the detector edge), `limb_disk_center` and `limb_shifts` (per-scan
+  recentring shifts, integer or sub-pixel). 0.6–2 s per 2300×2300 frame,
+  against 70–120 s for `hough_disk_center`. On the X1.2 and M3.2 full-disc
+  data the residual disc-centre motion, measured independently on on-disc
+  structure, is 2.7″ and 0.6″ RMS with the limb fit, against 5.0″ and 1.0″
+  with Hough. `hough_disk_center` is unchanged.
+- **Centre-to-limb variation for the atlas calibration**
+  (`chase.calib.intensity`): `atlas_calibrate(..., mu=, clv_table=)` and
+  `atlas_fit_quality(..., mu=, clv_table=)` multiply the FTS atlas by the
+  quiet-Sun CLV of the averaged pixels, so a box away from disc centre gives
+  the disc-centre DN→radiance factor. `limb_darkening` (Neckel & Labs 1994,
+  the table shipped with ISPy), `download_clv_table` / `load_clv_table`
+  (Pietrow et al. 2023, A&A 671, A130, CDS J/A+A/671/A130, SHA-256 checked),
+  `clv_factor`, `clv_reference` (quiet-Sun reference profile at μ) and
+  `mu_map`. The default `mu=1.0` keeps the 2.1 behaviour.
+
 ## [2.1.1] — 2026-10-22
 
 Second round of changes for the Solar Physics referee report: code used for
