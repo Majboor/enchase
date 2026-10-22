@@ -26,7 +26,7 @@ CARDS = {
     "calib": ("3  ·  Calibration", "Crop-tracking · wavelength resample · optical flow · contrast", "#e0af68"),
     "temp":  ("4  ·  Temperature", "double   =   Hα width   +   Fe I Planck  (FTS-atlas calibrated)", "#bb9af7"),
     "before_after": ("Before  |  After", "Raw fixed crop   vs.   tracked + optical-flow stabilised", "#f7768e"),
-    "finale": ("The Result", "2023-03-29  X2.1 flare, stabilised   ·   photosphere | chromosphere", "#73daca"),
+    "finale": ("The Result", "2023-03-29  X1.2 flare, stabilised   ·   photosphere | chromosphere", "#73daca"),
 }
 CARD_DUR = {"intro": 3.2, "finale": 2.6, "before_after": 2.8}
 DEFAULT_CARD_DUR = 2.6

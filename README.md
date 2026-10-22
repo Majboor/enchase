@@ -8,8 +8,8 @@ Calibration and flare analysis for CHASE/HIS solar spectroscopy. Install one pac
 ![license](https://img.shields.io/badge/license-MIT-green)
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/Majboor/enchase/main/assets/flare.gif" width="760" alt="Stabilised 2-panel animation of the 2023-03-29 X2.1 flare"><br>
-  <em>The 2023-03-29 X2.1 flare, stabilised by this pipeline. Photosphere left, chromosphere right.</em>
+  <img src="https://raw.githubusercontent.com/Majboor/enchase/main/assets/flare.gif" width="760" alt="Stabilised 2-panel animation of the 2023-03-29 X1.2 flare"><br>
+  <em>The 2023-03-29 X1.2 flare, stabilised by this pipeline. Photosphere left, chromosphere right.</em>
 </p>
 
 ## Install

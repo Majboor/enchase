@@ -1,5 +1,5 @@
 """Render side-by-side Before | After stabilisation frames from the real
-2023-03-29 X2.1 flare data.
+2023-03-29 X1.2 flare data.
 
   Before = fixed crop, no tracking, no wavelength resample (raw portal data)
   After  = shift-then-crop tracking + per-frame resample + optical-flow

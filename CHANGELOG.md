@@ -24,6 +24,8 @@ Changes made for the Solar Physics referee report on the enCHASE paper.
 - `import enchase` — alias of the `chase` package.
 
 ### Changed
+- Flare class label corrected from X2.1 to X1.2 (README, docs, examples,
+  `ChaseConfig.flareclass` default).
 - **Distribution renamed `chasepy` → `enchase`**, repository
   `Majboor/chase-pipeline` → `Majboor/enchase` (old URLs redirect). `chasepy`
   stays on PyPI as an empty shim that installs `enchase`.

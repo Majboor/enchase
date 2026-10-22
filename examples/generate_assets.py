@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Generate the README/doc assets from precomputed aligned products.
 
-Reuses the real 2023-03-29 X2.1 ``aligned_data.npz`` + ``disk_center.npz`` (so we
+Reuses the real 2023-03-29 X1.2 ``aligned_data.npz`` + ``disk_center.npz`` (so we
 don't re-run alignment on 25 x 375 MB cubes) and drives the **chase SDK** to
 render every figure embedded in the docs.  Run from anywhere:
 
@@ -64,7 +64,7 @@ def main() -> None:
     contrast, _ = chase.contrast_profile(ha, background=ha_bg, baseline_frame=0, correct_drift=True)
     chase.make_contrast_animation(ha, wav_ha, contrast, core_idx, times=times, patch=patch,
                                   output_path=str(out / "contrast_profile.gif"),
-                                  flarestart=15, flarepeak=24, flareclass="X2.1")
+                                  flarestart=15, flarepeak=24, flareclass="X1.2")
     _contrast_png(contrast, wav_ha, nframes, str(out / "contrast_profile.png"))
 
     # 4) Atlas calibration chart (ISPy)
@@ -113,7 +113,7 @@ def _two_panel_png(cont, core, times, patch, frame, path):
     fig, (a, b) = plt.subplots(1, 2, figsize=(10, 6), facecolor="white")
     a.imshow(cont[frame], cmap="hot", origin="lower", extent=ext); a.set_title("Photosphere (Hα continuum)")
     b.imshow(core[frame], cmap="hot", origin="lower", extent=ext); b.set_title("Chromosphere (Hα core)")
-    fig.suptitle(f"2023-03-29 X2.1  —  {times[frame]} (frame {frame})", fontsize=13)
+    fig.suptitle(f"2023-03-29 X1.2  —  {times[frame]} (frame {frame})", fontsize=13)
     fig.tight_layout(rect=[0, 0, 1, 0.95]); fig.savefig(path, dpi=130); plt.close(fig)
 
 
@@ -124,7 +124,7 @@ def _contrast_png(contrast, wav, nframes, path):
                    extent=[wav[0], wav[-1], 0, nframes], vmin=-0.15, vmax=0.15)
     ax.axhline(24, color="black", ls="dashed", lw=0.8)
     ax.set_xlabel(r"Wavelength [$\rm\AA$]"); ax.set_ylabel("Time [frame]")
-    ax.set_title("Contrast profile — X2.1 (CME Doppler feature in the Hα wing)")
+    ax.set_title("Contrast profile — X1.2 (CME Doppler feature in the Hα wing)")
     plt.colorbar(im, ax=ax, label="contrast"); fig.tight_layout()
     fig.savefig(path, dpi=130); plt.close(fig)
 

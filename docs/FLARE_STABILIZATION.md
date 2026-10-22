@@ -1,6 +1,6 @@
 # Flare GIF stabilization: use Farneback, not TV-L1
 
-The headline `assets/flare.gif` (the stabilised 2-panel X2.1 animation in the
+The headline `assets/flare.gif` (the stabilised 2-panel X1.2 animation in the
 README) must be rendered with the **Farneback** optical-flow method, not TV-L1.
 
 ## Why

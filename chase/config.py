@@ -67,7 +67,7 @@ class Config:
     flarestart, flarepeak : int
         Frame markers drawn on the contrast plot.
     flareclass : str
-        Label for the contrast plot (e.g. ``"X2.1"``).
+        Label for the contrast plot (e.g. ``"X1.2"``).
     """
 
     fits_dir: str = "."
@@ -98,7 +98,7 @@ class Config:
 
     flarestart: int = 15
     flarepeak: int = 24
-    flareclass: str = "X2.1"
+    flareclass: str = "X1.2"
 
     def effective_patch(self) -> Optional[List[int]]:
         """Return the patch to use, honouring ``full_fov``."""

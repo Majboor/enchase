@@ -41,4 +41,4 @@ diagnostics = true
 # --- Contrast plot labels -----------------------------------------------------
 flarestart = 15
 flarepeak  = 24
-flareclass = "X2.1"
+flareclass = "X1.2"

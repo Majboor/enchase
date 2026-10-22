@@ -12,7 +12,7 @@ import chase
 
 
 def main(fits_dir: str) -> None:
-    patch = [940, 1080, 1870, 2040]  # [y0, y1, x0, x1] for the X2.1 sunspot/flare
+    patch = [940, 1080, 1870, 2040]  # [y0, y1, x0, x1] for the X1.2 sunspot/flare
 
     # 1) Load + crop-track a sequence (shift-then-crop + per-frame wavelength resample)
     seq = chase.load_flare_sequence(fits_dir, patch=patch, core_wavelength=6562.8)

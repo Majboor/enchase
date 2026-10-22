@@ -147,7 +147,7 @@ gif = chase.make_animation(cont_al, core_al, times=seq["times"],
 
 gif = chase.make_contrast_animation(ha_al, seq["wavelength_ha"], contrast,
                                     seq["core_idx"], output_path="contrast.gif",
-                                    flarestart=15, flarepeak=24, flareclass="X2.1")
+                                    flarestart=15, flarepeak=24, flareclass="X1.2")
 
 gif = chase.make_temperature_animation(ha_T_stack, fe_T_stack, core_imgs,
                                        output_path="temperature.gif")

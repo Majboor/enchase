@@ -110,5 +110,5 @@ cube, hdr, wav = chase.load_cube("data/.../RSM...HA.fits")
 plt.imshow(cube[-1], origin="lower", cmap="hot"); plt.show()  # continuum
 ```
 
-For the 2023-03-29 X2.1 event the sunspot/flare sits at `[940, 1080, 1870, 2040]`.
+For the 2023-03-29 X1.2 event the sunspot/flare sits at `[940, 1080, 1870, 2040]`.
 Use `full_fov = true` (config) or `--full-fov` to process the whole disk instead.
